@@ -1,0 +1,4 @@
+.env
+deploy/.active-color
+*.log
+.DS_Store

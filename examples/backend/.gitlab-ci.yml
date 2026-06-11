@@ -1,0 +1,10 @@
+stages:
+  - build
+  - deploy
+
+include:
+  - local: ../../templates/docker-build.yml
+  - local: ../../templates/compose-blue-green-deploy.yml
+
+variables:
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA

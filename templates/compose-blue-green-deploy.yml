@@ -1,0 +1,27 @@
+.compose-blue-green-deploy:
+  image: alpine:3.20
+  stage: deploy
+  before_script:
+    - apk add --no-cache openssh-client rsync bash
+    - eval "$(ssh-agent -s)"
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+  script:
+    - rsync -az deploy/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/deploy/"
+    - |
+      ssh "$DEPLOY_USER@$DEPLOY_HOST" "
+        set -e
+        cd '$DEPLOY_PATH'
+        export APP_IMAGE='$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA'
+        bash deploy/blue-green-deploy.sh
+      "
+  environment:
+    name: production
+
+deploy:production:
+  extends: .compose-blue-green-deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
