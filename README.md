@@ -66,6 +66,24 @@ echo blue > deploy/.active-color
 ./deploy/blue-green-deploy.sh green
 ```
 
+## Python Deployment CLI
+
+The blue/green deployment logic is implemented as a Python CLI and the Bash script is kept as a thin compatibility wrapper.
+
+```bash
+python3 -m compose_zero_downtime deploy green
+python3 -m compose_zero_downtime deploy blue
+```
+
+The CLI handles:
+
+- active color detection
+- inactive color startup
+- container health check polling
+- Nginx upstream rendering
+- Nginx reload or restart fallback
+- optional old color shutdown
+
 ## GitLab CI Usage
 
 In a service repository:

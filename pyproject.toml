@@ -1,0 +1,11 @@
+[project]
+name = "compose-zero-downtime"
+version = "0.1.0"
+description = "Python CLI for Docker Compose blue/green deployments"
+requires-python = ">=3.10"
+
+[project.scripts]
+compose-zero-downtime = "compose_zero_downtime.cli:main"
+
+[tool.setuptools]
+packages = ["compose_zero_downtime"]
