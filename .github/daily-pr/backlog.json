@@ -1,0 +1,58 @@
+{
+  "tasks": [
+    {
+      "id": "rollback-flow",
+      "title": "Document blue-green rollback flow",
+      "target_file": "docs/daily/rollback-flow.md",
+      "content": "Rollback should reuse the same blue/green switch path as deployment. The previous color stays available until the new color is promoted and verified.\n\nRollback checklist:\n\n- identify last known healthy color\n- confirm old container is still present or restartable\n- switch reverse proxy upstream back to the previous color\n- verify health endpoint through the public proxy\n- only then stop the failed color",
+      "portfolio_reason": "Makes the zero-downtime Docker Compose story more credible by covering failure recovery.",
+      "test_instructions": "Review the markdown file and confirm rollback depends on health checks, not manual guessing.",
+      "change_kind": "docs-only"
+    },
+    {
+      "id": "migration-safety",
+      "title": "Add migration safety notes",
+      "target_file": "docs/daily/migration-safety.md",
+      "content": "Zero-downtime deployment depends on backward-compatible database changes. A container switch cannot protect against destructive schema changes.\n\nSafer migration pattern:\n\n- expand schema first\n- deploy app code that supports old and new schema\n- backfill data if needed\n- switch traffic after readiness checks\n- remove old schema only after all app instances are upgraded",
+      "portfolio_reason": "Shows awareness of the boundary between deployment mechanics and application compatibility.",
+      "test_instructions": "Review the markdown file and confirm it warns about breaking migrations.",
+      "change_kind": "docs-only"
+    },
+    {
+      "id": "health-endpoint-contract",
+      "title": "Define health endpoint contract",
+      "target_file": "docs/daily/health-endpoint-contract.md",
+      "content": "Health checks should represent readiness, not only process liveness. The deployment script promotes a color only after the container reports ready.\n\nA useful readiness endpoint should verify:\n\n- application process is accepting requests\n- critical dependencies are reachable\n- migrations required by the running version are applied\n- the app can serve a minimal real request path",
+      "portfolio_reason": "Strengthens the health-check-gated deployment claim with an explicit contract.",
+      "test_instructions": "Review the markdown file and confirm the readiness criteria are concrete.",
+      "change_kind": "docs-only"
+    },
+    {
+      "id": "nginx-reload-notes",
+      "title": "Document Nginx reload behavior",
+      "target_file": "docs/daily/nginx-reload-notes.md",
+      "content": "The traffic switch relies on rendering a new upstream and reloading Nginx. Reloading should apply the new config while keeping the proxy process available.\n\nOperational notes:\n\n- validate generated config before production use\n- reload rather than stop/start where possible\n- keep the old color running during the switch\n- restart only as a fallback path",
+      "portfolio_reason": "Explains the reverse proxy behavior behind the Docker Compose zero-downtime pattern.",
+      "test_instructions": "Review the markdown file and confirm it separates reload from restart fallback.",
+      "change_kind": "docs-only"
+    },
+    {
+      "id": "deploy-env-vars",
+      "title": "Add deployment environment variable notes",
+      "target_file": "docs/daily/deploy-env-vars.md",
+      "content": "Deployment variables should be explicit so teams can reuse the template safely.\n\nImportant variables:\n\n- `DEPLOY_HOST` and `DEPLOY_USER` for SSH target selection\n- `DEPLOY_PATH` for server-side release location\n- `APP_IMAGE` for the immutable image promoted to a color\n- `STOP_OLD_AFTER_SWITCH` for keeping or stopping the old color\n- `APP_PORT` for internal app readiness checks",
+      "portfolio_reason": "Improves template usability for real GitLab CI deployment scenarios.",
+      "test_instructions": "Review the markdown file and confirm variable names match repository conventions.",
+      "change_kind": "docs-only"
+    },
+    {
+      "id": "smoke-test-plan",
+      "title": "Add post-switch smoke test plan",
+      "target_file": "docs/daily/smoke-test-plan.md",
+      "content": "After switching traffic, a smoke test should verify the public path through the proxy, not only the container health state.\n\nMinimum smoke tests:\n\n- public HTTP endpoint returns success\n- response identifies the expected app version or color when available\n- critical API route responds within the expected timeout\n- error rate remains stable after the switch",
+      "portfolio_reason": "Shows practical release validation beyond container orchestration.",
+      "test_instructions": "Review the markdown file and confirm smoke tests are externally observable.",
+      "change_kind": "docs-only"
+    }
+  ]
+}
