@@ -5,7 +5,9 @@ import os
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
+from urllib.parse import urljoin
 
 
 VALID_COLORS = {"blue", "green"}
@@ -38,6 +40,19 @@ def render_nginx_config(template: Path, output: Path, active_color: str, app_por
         .replace("{{APP_PORT}}", app_port)
     )
     output.write_text(rendered, encoding="utf-8")
+
+
+def build_smoke_url(base_url: str, path: str = "/") -> str:
+    clean_base = base_url.rstrip("/") + "/"
+    clean_path = path.lstrip("/")
+    return urljoin(clean_base, clean_path)
+
+
+def run_smoke_test(base_url: str, path: str, timeout: float) -> None:
+    target = build_smoke_url(base_url, path)
+    with urllib.request.urlopen(target, timeout=timeout) as response:
+        if response.status >= 400:
+            raise RuntimeError(f"smoke test failed with HTTP {response.status}: {target}")
 
 
 def compose_command(compose_file: Path, env_file: Path, *args: str) -> list[str]:
@@ -131,6 +146,10 @@ def deploy(args: argparse.Namespace) -> int:
     active_file.write_text(f"{next_color}\n", encoding="utf-8")
     print(f"Traffic switched to {next_color}")
 
+    if args.smoke_url:
+        print(f"Running public smoke test against {build_smoke_url(args.smoke_url, args.smoke_path)}")
+        run_smoke_test(args.smoke_url, args.smoke_path, args.smoke_timeout)
+
     if old_color and stop_old:
         run(compose_command(compose_file, env_file, "stop", f"app_{old_color}"), check=False)
 
@@ -146,6 +165,9 @@ def build_parser() -> argparse.ArgumentParser:
     deploy_parser.add_argument("--root", help="Repository root. Defaults to the current package root.")
     deploy_parser.add_argument("--health-attempts", type=int, default=60)
     deploy_parser.add_argument("--health-interval", type=float, default=2.0)
+    deploy_parser.add_argument("--smoke-url", help="Public base URL to verify after switching traffic.")
+    deploy_parser.add_argument("--smoke-path", default="/", help="Public path used for the smoke test.")
+    deploy_parser.add_argument("--smoke-timeout", type=float, default=5.0)
     deploy_parser.set_defaults(func=deploy)
 
     return parser

@@ -2,7 +2,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from compose_zero_downtime.cli import choose_next_color, read_active_color, render_nginx_config
+from compose_zero_downtime.cli import (
+    build_smoke_url,
+    choose_next_color,
+    read_active_color,
+    render_nginx_config,
+)
 
 
 class ComposeZeroDowntimeTests(unittest.TestCase):
@@ -29,6 +34,12 @@ class ComposeZeroDowntimeTests(unittest.TestCase):
             render_nginx_config(template, output, "green", "8080")
 
             self.assertEqual(output.read_text(encoding="utf-8"), "server app_green:8080;")
+
+    def test_build_smoke_url_joins_base_and_path(self):
+        self.assertEqual(
+            build_smoke_url("https://example.com/app/", "/health"),
+            "https://example.com/app/health",
+        )
 
 
 if __name__ == "__main__":
