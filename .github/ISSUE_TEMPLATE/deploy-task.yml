@@ -1,0 +1,29 @@
+name: Deployment task
+description: Track a concrete CI/CD, Docker Compose, health check, or rollback improvement.
+title: "[deploy]: "
+labels: ["enhancement", "deployment"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should improve in the deployment flow?
+      placeholder: Add a dry-run mode that renders Nginx config without switching traffic.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety considerations
+      description: What must remain true during deploy, switch, or rollback?
+      placeholder: Old color remains available until public smoke test passes.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Which tests or manual checks should pass?
+      placeholder: python3 -m unittest discover -s tests
+    validations:
+      required: true
