@@ -1,7 +1,8 @@
-# Migration Safety For Zero-Downtime Deployments
+# Add migration safety notes
 
-Zero-downtime deployment depends on backward-compatible database changes. A
-container switch cannot protect against destructive schema changes.
+<!-- daily-pr-task: migration-safety -->
+
+Zero-downtime deployment depends on backward-compatible database changes. A container switch cannot protect against destructive schema changes.
 
 Safer migration pattern:
 
@@ -11,7 +12,10 @@ Safer migration pattern:
 - switch traffic after readiness checks
 - remove old schema only after all app instances are upgraded
 
-The deployment pipeline should treat schema compatibility as part of release
-readiness. Blue-green Docker Compose deployment can keep processes available,
-but application and database versions still need a contract that both colors can
-serve during the transition.
+## Portfolio Value
+
+Shows awareness of the boundary between deployment mechanics and application compatibility.
+
+## Validation
+
+Review the markdown file and confirm it warns about breaking migrations.
