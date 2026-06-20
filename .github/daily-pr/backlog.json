@@ -23,9 +23,24 @@
       "title": "Define health endpoint contract",
       "target_file": "docs/daily/health-endpoint-contract.md",
       "content": "Health checks should represent readiness, not only process liveness. The deployment script promotes a color only after the container reports ready.\n\nA useful readiness endpoint should verify:\n\n- application process is accepting requests\n- critical dependencies are reachable\n- migrations required by the running version are applied\n- the app can serve a minimal real request path",
+      "files": [
+        {
+          "path": "docs/daily/health-endpoint-contract.md",
+          "kind": "document",
+          "content": "Health checks should represent readiness, not only process liveness. The deployment script promotes a color only after the container reports ready.\n\nA useful readiness endpoint should verify:\n\n- application process is accepting requests\n- critical dependencies are reachable\n- migrations required by the running version are applied\n- the app can serve a minimal real request path"
+        },
+        {
+          "path": "compose_zero_downtime/health_contract.py",
+          "content": "from __future__ import annotations\n\nREQUIRED_READINESS_CHECKS = (\n    \"http_accepting_requests\",\n    \"critical_dependencies_reachable\",\n    \"required_migrations_applied\",\n    \"minimal_real_request_served\",\n)\n\n\ndef missing_readiness_checks(checks: list[str] | tuple[str, ...] | set[str]) -> tuple[str, ...]:\n    provided = set(checks)\n    return tuple(check for check in REQUIRED_READINESS_CHECKS if check not in provided)\n\n\ndef readiness_contract_is_satisfied(checks: list[str] | tuple[str, ...] | set[str]) -> bool:\n    return not missing_readiness_checks(checks)\n"
+        },
+        {
+          "path": "tests/test_health_contract.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.health_contract import (\n    REQUIRED_READINESS_CHECKS,\n    missing_readiness_checks,\n    readiness_contract_is_satisfied,\n)\n\n\nclass HealthContractTests(unittest.TestCase):\n    def test_complete_contract_is_satisfied(self):\n        self.assertTrue(readiness_contract_is_satisfied(REQUIRED_READINESS_CHECKS))\n\n    def test_missing_checks_are_reported(self):\n        missing = missing_readiness_checks({\"http_accepting_requests\"})\n\n        self.assertIn(\"critical_dependencies_reachable\", missing)\n        self.assertIn(\"minimal_real_request_served\", missing)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ],
       "portfolio_reason": "Strengthens the health-check-gated deployment claim with an explicit contract.",
       "test_instructions": "Review the markdown file and confirm the readiness criteria are concrete.",
-      "change_kind": "docs-only"
+      "change_kind": "docs-and-code"
     },
     {
       "id": "nginx-reload-notes",
