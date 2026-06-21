@@ -49,7 +49,22 @@
       "content": "The traffic switch relies on rendering a new upstream and reloading Nginx. Reloading should apply the new config while keeping the proxy process available.\n\nOperational notes:\n\n- validate generated config before production use\n- reload rather than stop/start where possible\n- keep the old color running during the switch\n- restart only as a fallback path",
       "portfolio_reason": "Explains the reverse proxy behavior behind the Docker Compose zero-downtime pattern.",
       "test_instructions": "Review the markdown file and confirm it separates reload from restart fallback.",
-      "change_kind": "docs-only"
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/nginx-reload-notes.md",
+          "kind": "document",
+          "content": "The traffic switch relies on rendering a new upstream and reloading Nginx. Reloading should apply the new config while keeping the proxy process available.\n\nOperational notes:\n\n- validate generated config before production use\n- reload rather than stop/start where possible\n- keep the old color running during the switch\n- restart only as a fallback path"
+        },
+        {
+          "path": "compose_zero_downtime/nginx_reload.py",
+          "content": "from __future__ import annotations\n\n\ndef nginx_reload_commands(*, validate_config: bool = True) -> tuple[list[str], list[str]]:\n    reload_command = [\"nginx\", \"-s\", \"reload\"]\n    if validate_config:\n        reload_command = [\"nginx\", \"-t\", \"&&\", *reload_command]\n    fallback_command = [\"docker\", \"compose\", \"restart\", \"nginx\"]\n    return reload_command, fallback_command\n\n\ndef reload_is_preferred_over_restart(commands: tuple[list[str], list[str]]) -> bool:\n    reload_command, fallback_command = commands\n    return \"reload\" in reload_command and \"restart\" in fallback_command\n"
+        },
+        {
+          "path": "tests/test_nginx_reload.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.nginx_reload import nginx_reload_commands, reload_is_preferred_over_restart\n\n\nclass NginxReloadTests(unittest.TestCase):\n    def test_reload_plan_validates_config_before_reload(self):\n        reload_command, fallback_command = nginx_reload_commands(validate_config=True)\n\n        self.assertIn(\"-t\", reload_command)\n        self.assertIn(\"reload\", reload_command)\n        self.assertIn(\"restart\", fallback_command)\n\n    def test_reload_is_preferred_over_restart(self):\n        self.assertTrue(reload_is_preferred_over_restart(nginx_reload_commands()))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     },
     {
       "id": "deploy-env-vars",
@@ -58,7 +73,22 @@
       "content": "Deployment variables should be explicit so teams can reuse the template safely.\n\nImportant variables:\n\n- `DEPLOY_HOST` and `DEPLOY_USER` for SSH target selection\n- `DEPLOY_PATH` for server-side release location\n- `APP_IMAGE` for the immutable image promoted to a color\n- `STOP_OLD_AFTER_SWITCH` for keeping or stopping the old color\n- `APP_PORT` for internal app readiness checks",
       "portfolio_reason": "Improves template usability for real GitLab CI deployment scenarios.",
       "test_instructions": "Review the markdown file and confirm variable names match repository conventions.",
-      "change_kind": "docs-only"
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/deploy-env-vars.md",
+          "kind": "document",
+          "content": "Deployment variables should be explicit so teams can reuse the template safely.\n\nImportant variables:\n\n- `DEPLOY_HOST` and `DEPLOY_USER` for SSH target selection\n- `DEPLOY_PATH` for server-side release location\n- `APP_IMAGE` for the immutable image promoted to a color\n- `STOP_OLD_AFTER_SWITCH` for keeping or stopping the old color\n- `APP_PORT` for internal app readiness checks"
+        },
+        {
+          "path": "compose_zero_downtime/deploy_env.py",
+          "content": "from __future__ import annotations\n\nREQUIRED_DEPLOY_ENV_VARS = (\n    \"DEPLOY_HOST\",\n    \"DEPLOY_USER\",\n    \"DEPLOY_PATH\",\n    \"APP_IMAGE\",\n    \"APP_PORT\",\n)\n\n\ndef missing_deploy_env_vars(env: dict[str, str]) -> tuple[str, ...]:\n    return tuple(name for name in REQUIRED_DEPLOY_ENV_VARS if not env.get(name))\n\n\ndef deploy_env_is_complete(env: dict[str, str]) -> bool:\n    return not missing_deploy_env_vars(env)\n"
+        },
+        {
+          "path": "tests/test_deploy_env.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.deploy_env import REQUIRED_DEPLOY_ENV_VARS, deploy_env_is_complete, missing_deploy_env_vars\n\n\nclass DeployEnvTests(unittest.TestCase):\n    def test_complete_env_passes(self):\n        self.assertTrue(deploy_env_is_complete({name: \"value\" for name in REQUIRED_DEPLOY_ENV_VARS}))\n\n    def test_missing_env_vars_are_reported(self):\n        missing = missing_deploy_env_vars({\"DEPLOY_HOST\": \"example.com\"})\n\n        self.assertIn(\"APP_IMAGE\", missing)\n        self.assertIn(\"DEPLOY_PATH\", missing)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     },
     {
       "id": "smoke-test-plan",
@@ -67,7 +97,22 @@
       "content": "After switching traffic, a smoke test should verify the public path through the proxy, not only the container health state.\n\nMinimum smoke tests:\n\n- public HTTP endpoint returns success\n- response identifies the expected app version or color when available\n- critical API route responds within the expected timeout\n- error rate remains stable after the switch",
       "portfolio_reason": "Shows practical release validation beyond container orchestration.",
       "test_instructions": "Review the markdown file and confirm smoke tests are externally observable.",
-      "change_kind": "docs-only"
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/smoke-test-plan.md",
+          "kind": "document",
+          "content": "After switching traffic, a smoke test should verify the public path through the proxy, not only the container health state.\n\nMinimum smoke tests:\n\n- public HTTP endpoint returns success\n- response identifies the expected app version or color when available\n- critical API route responds within the expected timeout\n- error rate remains stable after the switch"
+        },
+        {
+          "path": "compose_zero_downtime/smoke_plan.py",
+          "content": "from __future__ import annotations\n\nREQUIRED_SMOKE_CHECKS = (\n    \"public_endpoint_success\",\n    \"expected_version_or_color\",\n    \"critical_api_route\",\n    \"stable_error_rate\",\n)\n\n\ndef missing_smoke_checks(checks: list[str] | tuple[str, ...] | set[str]) -> tuple[str, ...]:\n    present = set(checks)\n    return tuple(check for check in REQUIRED_SMOKE_CHECKS if check not in present)\n\n\ndef smoke_plan_is_complete(checks: list[str] | tuple[str, ...] | set[str]) -> bool:\n    return not missing_smoke_checks(checks)\n"
+        },
+        {
+          "path": "tests/test_smoke_plan.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.smoke_plan import REQUIRED_SMOKE_CHECKS, missing_smoke_checks, smoke_plan_is_complete\n\n\nclass SmokePlanTests(unittest.TestCase):\n    def test_complete_smoke_plan_passes(self):\n        self.assertTrue(smoke_plan_is_complete(REQUIRED_SMOKE_CHECKS))\n\n    def test_missing_smoke_checks_are_reported(self):\n        missing = missing_smoke_checks({\"public_endpoint_success\"})\n\n        self.assertIn(\"critical_api_route\", missing)\n        self.assertIn(\"stable_error_rate\", missing)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
