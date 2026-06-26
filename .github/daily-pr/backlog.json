@@ -179,6 +179,50 @@
           "content": "import unittest\n\nfrom compose_zero_downtime.profile_policy import compose_profiles_are_ready, missing_color_profiles\n\n\nclass ProfilePolicyTests(unittest.TestCase):\n    def test_blue_green_profiles_are_ready(self):\n        self.assertTrue(compose_profiles_are_ready({\"blue\", \"green\"}))\n\n    def test_missing_profile_is_reported(self):\n        self.assertEqual(missing_color_profiles({\"blue\"}), (\"green\",))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "nginx-config-validation-plan",
+      "title": "Add Nginx config validation plan",
+      "portfolio_reason": "Makes proxy reload safety explicit before traffic is switched.",
+      "test_instructions": "Run the unit test and confirm reload is blocked when validation fails.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/nginx-config-validation-plan.md",
+          "kind": "document",
+          "content": "Nginx configuration should be rendered and validated before reload. A failed validation must stop promotion and keep the previous color serving traffic.\n\nValidation inputs:\n\n- rendered config path\n- validation command\n- reload command\n- rollback behavior"
+        },
+        {
+          "path": "compose_zero_downtime/nginx_validation.py",
+          "content": "from __future__ import annotations\n\n\ndef nginx_validation_warnings(plan: dict[str, object]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if not plan.get(\"rendered_config_path\"):\n        warnings.append(\"rendered_config_path_missing\")\n    if plan.get(\"validation_required\") is not True:\n        warnings.append(\"validation_must_be_required\")\n    if plan.get(\"reload_on_validation_failure\") is True:\n        warnings.append(\"must_not_reload_on_validation_failure\")\n    return tuple(warnings)\n\n\ndef nginx_validation_plan_is_safe(plan: dict[str, object]) -> bool:\n    return not nginx_validation_warnings(plan)\n"
+        },
+        {
+          "path": "tests/test_nginx_validation.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.nginx_validation import nginx_validation_plan_is_safe, nginx_validation_warnings\n\n\nclass NginxValidationTests(unittest.TestCase):\n    def test_safe_plan_passes(self):\n        plan = {\"rendered_config_path\": \"deploy/nginx/default.conf\", \"validation_required\": True, \"reload_on_validation_failure\": False}\n\n        self.assertTrue(nginx_validation_plan_is_safe(plan))\n\n    def test_reload_after_failed_validation_is_reported(self):\n        warnings = nginx_validation_warnings({\"validation_required\": False, \"reload_on_validation_failure\": True})\n\n        self.assertIn(\"validation_must_be_required\", warnings)\n        self.assertIn(\"must_not_reload_on_validation_failure\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "deploy-lock-policy",
+      "title": "Add deployment lock policy",
+      "portfolio_reason": "Shows concurrent production deploys are serialized for predictable traffic switching.",
+      "test_instructions": "Run the unit test and confirm lock TTL must be positive.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/deploy-lock-policy.md",
+          "kind": "document",
+          "content": "A deployment lock prevents two pipeline runs from switching colors at the same time. The lock should have an owner and TTL so abandoned deploys can be recovered safely.\n\nPolicy fields:\n\n- lock name\n- owner\n- ttl seconds\n- release behavior"
+        },
+        {
+          "path": "compose_zero_downtime/deploy_lock.py",
+          "content": "from __future__ import annotations\n\n\ndef deploy_lock_warnings(lock: dict[str, object]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if not lock.get(\"name\"):\n        warnings.append(\"lock_name_missing\")\n    if not lock.get(\"owner\"):\n        warnings.append(\"lock_owner_missing\")\n    ttl = lock.get(\"ttl_seconds\")\n    if not isinstance(ttl, int) or ttl <= 0:\n        warnings.append(\"ttl_seconds_must_be_positive\")\n    return tuple(warnings)\n\n\ndef deploy_lock_is_valid(lock: dict[str, object]) -> bool:\n    return not deploy_lock_warnings(lock)\n"
+        },
+        {
+          "path": "tests/test_deploy_lock.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.deploy_lock import deploy_lock_is_valid, deploy_lock_warnings\n\n\nclass DeployLockTests(unittest.TestCase):\n    def test_valid_lock_passes(self):\n        self.assertTrue(deploy_lock_is_valid({\"name\": \"prod\", \"owner\": \"pipeline\", \"ttl_seconds\": 900}))\n\n    def test_missing_lock_fields_are_reported(self):\n        warnings = deploy_lock_warnings({\"ttl_seconds\": 0})\n\n        self.assertIn(\"lock_name_missing\", warnings)\n        self.assertIn(\"ttl_seconds_must_be_positive\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
