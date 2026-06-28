@@ -223,6 +223,50 @@
           "content": "import unittest\n\nfrom compose_zero_downtime.deploy_lock import deploy_lock_is_valid, deploy_lock_warnings\n\n\nclass DeployLockTests(unittest.TestCase):\n    def test_valid_lock_passes(self):\n        self.assertTrue(deploy_lock_is_valid({\"name\": \"prod\", \"owner\": \"pipeline\", \"ttl_seconds\": 900}))\n\n    def test_missing_lock_fields_are_reported(self):\n        warnings = deploy_lock_warnings({\"ttl_seconds\": 0})\n\n        self.assertIn(\"lock_name_missing\", warnings)\n        self.assertIn(\"ttl_seconds_must_be_positive\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "predeploy-disk-check",
+      "title": "Add pre-deploy disk check",
+      "portfolio_reason": "Shows the deploy flow verifies host capacity before starting a new color.",
+      "test_instructions": "Run the unit test and confirm low free disk space blocks deployment.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/predeploy-disk-check.md",
+          "kind": "document",
+          "content": "Pre-deploy checks should verify enough free disk is available before pulling a new image or starting a new color. This prevents partial deployments caused by host capacity issues.\n\nChecks:\n\n- free disk percentage\n- minimum free bytes\n- image pull target filesystem\n- fail-fast behavior"
+        },
+        {
+          "path": "compose_zero_downtime/disk_check.py",
+          "content": "from __future__ import annotations\n\n\ndef disk_check_warnings(*, free_percent: float, min_free_percent: float = 15.0) -> tuple[str, ...]:\n    if free_percent < 0 or free_percent > 100:\n        return (\"free_percent_must_be_between_0_and_100\",)\n    if free_percent < min_free_percent:\n        return (\"free_disk_below_deploy_threshold\",)\n    return ()\n\n\ndef disk_check_passes(*, free_percent: float, min_free_percent: float = 15.0) -> bool:\n    return not disk_check_warnings(free_percent=free_percent, min_free_percent=min_free_percent)\n"
+        },
+        {
+          "path": "tests/test_disk_check.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.disk_check import disk_check_passes, disk_check_warnings\n\n\nclass DiskCheckTests(unittest.TestCase):\n    def test_enough_disk_passes(self):\n        self.assertTrue(disk_check_passes(free_percent=30))\n\n    def test_low_disk_is_reported(self):\n        self.assertIn(\"free_disk_below_deploy_threshold\", disk_check_warnings(free_percent=5))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "release-metadata-policy",
+      "title": "Add release metadata policy",
+      "portfolio_reason": "Makes releases auditable by requiring commit, image, and deployment color metadata.",
+      "test_instructions": "Run the unit test and confirm missing release metadata is reported.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/release-metadata-policy.md",
+          "kind": "document",
+          "content": "A zero-downtime deployment should record enough release metadata to explain what changed and how to roll it back. Metadata should travel with CI logs and release notes.\n\nRequired metadata:\n\n- commit sha\n- image reference\n- target color\n- deploy actor"
+        },
+        {
+          "path": "compose_zero_downtime/release_metadata.py",
+          "content": "from __future__ import annotations\n\nREQUIRED_RELEASE_METADATA = (\"commit_sha\", \"image\", \"target_color\", \"deploy_actor\")\n\n\ndef missing_release_metadata(metadata: dict[str, object]) -> tuple[str, ...]:\n    return tuple(field for field in REQUIRED_RELEASE_METADATA if not metadata.get(field))\n\n\ndef release_metadata_is_complete(metadata: dict[str, object]) -> bool:\n    return not missing_release_metadata(metadata)\n"
+        },
+        {
+          "path": "tests/test_release_metadata.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.release_metadata import missing_release_metadata, release_metadata_is_complete\n\n\nclass ReleaseMetadataTests(unittest.TestCase):\n    def test_complete_metadata_passes(self):\n        self.assertTrue(release_metadata_is_complete({\"commit_sha\": \"abc\", \"image\": \"api:v1.0.0\", \"target_color\": \"blue\", \"deploy_actor\": \"ci\"}))\n\n    def test_missing_metadata_is_reported(self):\n        self.assertIn(\"image\", missing_release_metadata({\"commit_sha\": \"abc\"}))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
