@@ -267,6 +267,50 @@
           "content": "import unittest\n\nfrom compose_zero_downtime.release_metadata import missing_release_metadata, release_metadata_is_complete\n\n\nclass ReleaseMetadataTests(unittest.TestCase):\n    def test_complete_metadata_passes(self):\n        self.assertTrue(release_metadata_is_complete({\"commit_sha\": \"abc\", \"image\": \"api:v1.0.0\", \"target_color\": \"blue\", \"deploy_actor\": \"ci\"}))\n\n    def test_missing_metadata_is_reported(self):\n        self.assertIn(\"image\", missing_release_metadata({\"commit_sha\": \"abc\"}))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "deploy-audit-event-policy",
+      "title": "Add deployment audit event policy",
+      "portfolio_reason": "Shows deployment events are auditable with actor, target, and result metadata.",
+      "test_instructions": "Run the unit test and confirm audit events require actor, commit, image, and result.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/deploy-audit-event-policy.md",
+          "kind": "document",
+          "content": "Deployment audit events should capture who deployed what, where, and with what result. This keeps blue/green promotion traceable after incidents.\n\nRequired fields:\n\n- actor\n- commit sha\n- image\n- target color\n- result"
+        },
+        {
+          "path": "compose_zero_downtime/deploy_audit.py",
+          "content": "from __future__ import annotations\n\nREQUIRED_AUDIT_FIELDS = (\"actor\", \"commit_sha\", \"image\", \"target_color\", \"result\")\n\n\ndef missing_audit_fields(event: dict[str, object]) -> tuple[str, ...]:\n    return tuple(field for field in REQUIRED_AUDIT_FIELDS if not event.get(field))\n\n\ndef deploy_audit_event_is_complete(event: dict[str, object]) -> bool:\n    return not missing_audit_fields(event)\n"
+        },
+        {
+          "path": "tests/test_deploy_audit.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.deploy_audit import deploy_audit_event_is_complete, missing_audit_fields\n\n\nclass DeployAuditTests(unittest.TestCase):\n    def test_complete_event_passes(self):\n        event = {\"actor\": \"ci\", \"commit_sha\": \"abcdef1\", \"image\": \"api:v1.0.0\", \"target_color\": \"green\", \"result\": \"success\"}\n\n        self.assertTrue(deploy_audit_event_is_complete(event))\n\n    def test_missing_event_fields_are_reported(self):\n        self.assertIn(\"image\", missing_audit_fields({\"actor\": \"ci\"}))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "container-startup-budget",
+      "title": "Add container startup budget policy",
+      "portfolio_reason": "Shows readiness waits are bounded and tuned to deployment expectations.",
+      "test_instructions": "Run the unit test and confirm startup attempts and intervals are bounded.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/container-startup-budget.md",
+          "kind": "document",
+          "content": "Container startup budget should define how long the deployer waits before failing a color promotion. Bounded waits prevent stuck pipelines.\n\nPolicy fields:\n\n- health attempts\n- health interval seconds\n- maximum startup budget\n- failure action"
+        },
+        {
+          "path": "compose_zero_downtime/startup_budget.py",
+          "content": "from __future__ import annotations\n\n\ndef startup_budget_warnings(*, attempts: int, interval_seconds: float, max_seconds: float = 180.0) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if attempts <= 0:\n        warnings.append(\"attempts_must_be_positive\")\n    if interval_seconds <= 0:\n        warnings.append(\"interval_seconds_must_be_positive\")\n    if attempts > 0 and interval_seconds > 0 and attempts * interval_seconds > max_seconds:\n        warnings.append(\"startup_budget_exceeds_max_seconds\")\n    return tuple(warnings)\n\n\ndef startup_budget_is_safe(*, attempts: int, interval_seconds: float, max_seconds: float = 180.0) -> bool:\n    return not startup_budget_warnings(attempts=attempts, interval_seconds=interval_seconds, max_seconds=max_seconds)\n"
+        },
+        {
+          "path": "tests/test_startup_budget.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.startup_budget import startup_budget_is_safe, startup_budget_warnings\n\n\nclass StartupBudgetTests(unittest.TestCase):\n    def test_safe_budget_passes(self):\n        self.assertTrue(startup_budget_is_safe(attempts=30, interval_seconds=2))\n\n    def test_oversized_budget_is_reported(self):\n        self.assertIn(\"startup_budget_exceeds_max_seconds\", startup_budget_warnings(attempts=100, interval_seconds=5))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
