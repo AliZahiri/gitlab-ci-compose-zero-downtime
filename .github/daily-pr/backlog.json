@@ -311,6 +311,50 @@
           "content": "import unittest\n\nfrom compose_zero_downtime.startup_budget import startup_budget_is_safe, startup_budget_warnings\n\n\nclass StartupBudgetTests(unittest.TestCase):\n    def test_safe_budget_passes(self):\n        self.assertTrue(startup_budget_is_safe(attempts=30, interval_seconds=2))\n\n    def test_oversized_budget_is_reported(self):\n        self.assertIn(\"startup_budget_exceeds_max_seconds\", startup_budget_warnings(attempts=100, interval_seconds=5))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "compose-health-grace-policy",
+      "title": "Add compose health grace policy",
+      "portfolio_reason": "Shows blue/green promotion waits for readiness without hiding broken deployments.",
+      "test_instructions": "Run the unit test and confirm grace windows are bounded and positive.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/compose-health-grace-policy.md",
+          "kind": "document",
+          "content": "Compose health grace policy should define how long a new color is allowed to warm up before traffic promotion. The window must be long enough for startup but bounded for CI feedback.\n\nPolicy fields:\n\n- warmup seconds\n- health interval seconds\n- maximum grace seconds\n- failure action"
+        },
+        {
+          "path": "compose_zero_downtime/health_grace.py",
+          "content": "from __future__ import annotations\n\n\ndef health_grace_warnings(*, warmup_seconds: int, interval_seconds: int, max_grace_seconds: int = 180) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if warmup_seconds <= 0:\n        warnings.append(\"warmup_seconds_must_be_positive\")\n    if interval_seconds <= 0:\n        warnings.append(\"interval_seconds_must_be_positive\")\n    if warmup_seconds > max_grace_seconds:\n        warnings.append(\"warmup_exceeds_max_grace\")\n    if interval_seconds > 0 and warmup_seconds > 0 and warmup_seconds < interval_seconds:\n        warnings.append(\"warmup_shorter_than_interval\")\n    return tuple(warnings)\n\n\ndef health_grace_is_safe(*, warmup_seconds: int, interval_seconds: int, max_grace_seconds: int = 180) -> bool:\n    return not health_grace_warnings(warmup_seconds=warmup_seconds, interval_seconds=interval_seconds, max_grace_seconds=max_grace_seconds)\n"
+        },
+        {
+          "path": "tests/test_health_grace.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.health_grace import health_grace_is_safe, health_grace_warnings\n\n\nclass HealthGraceTests(unittest.TestCase):\n    def test_reasonable_grace_window_passes(self):\n        self.assertTrue(health_grace_is_safe(warmup_seconds=60, interval_seconds=5))\n\n    def test_oversized_grace_window_is_reported(self):\n        self.assertIn(\"warmup_exceeds_max_grace\", health_grace_warnings(warmup_seconds=300, interval_seconds=10))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "rollback-window-policy",
+      "title": "Add rollback window policy",
+      "portfolio_reason": "Shows failed promotions keep the previous color available long enough for fast recovery.",
+      "test_instructions": "Run the unit test and confirm rollback windows preserve old color availability.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/rollback-window-policy.md",
+          "kind": "document",
+          "content": "Rollback window policy should keep the old color available after promotion until smoke checks and observation complete. This makes compose-based deploys safer under failure.\n\nPolicy fields:\n\n- keep-old-color seconds\n- smoke-check seconds\n- minimum observation seconds\n- cleanup allowed flag"
+        },
+        {
+          "path": "compose_zero_downtime/rollback_window.py",
+          "content": "from __future__ import annotations\n\n\ndef rollback_window_warnings(*, keep_old_seconds: int, smoke_check_seconds: int, min_observation_seconds: int = 120) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if keep_old_seconds <= 0:\n        warnings.append(\"keep_old_seconds_must_be_positive\")\n    if smoke_check_seconds <= 0:\n        warnings.append(\"smoke_check_seconds_must_be_positive\")\n    if keep_old_seconds < smoke_check_seconds + min_observation_seconds:\n        warnings.append(\"rollback_window_too_short\")\n    return tuple(warnings)\n\n\ndef rollback_window_is_safe(*, keep_old_seconds: int, smoke_check_seconds: int, min_observation_seconds: int = 120) -> bool:\n    return not rollback_window_warnings(keep_old_seconds=keep_old_seconds, smoke_check_seconds=smoke_check_seconds, min_observation_seconds=min_observation_seconds)\n"
+        },
+        {
+          "path": "tests/test_rollback_window.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.rollback_window import rollback_window_is_safe, rollback_window_warnings\n\n\nclass RollbackWindowTests(unittest.TestCase):\n    def test_window_keeps_old_color_available(self):\n        self.assertTrue(rollback_window_is_safe(keep_old_seconds=300, smoke_check_seconds=60))\n\n    def test_short_window_is_reported(self):\n        self.assertIn(\"rollback_window_too_short\", rollback_window_warnings(keep_old_seconds=90, smoke_check_seconds=30))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
