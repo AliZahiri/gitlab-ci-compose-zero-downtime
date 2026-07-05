@@ -355,6 +355,50 @@
           "content": "import unittest\n\nfrom compose_zero_downtime.rollback_window import rollback_window_is_safe, rollback_window_warnings\n\n\nclass RollbackWindowTests(unittest.TestCase):\n    def test_window_keeps_old_color_available(self):\n        self.assertTrue(rollback_window_is_safe(keep_old_seconds=300, smoke_check_seconds=60))\n\n    def test_short_window_is_reported(self):\n        self.assertIn(\"rollback_window_too_short\", rollback_window_warnings(keep_old_seconds=90, smoke_check_seconds=30))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "smoke-test-manifest-policy",
+      "title": "Add smoke test manifest policy",
+      "portfolio_reason": "Shows zero-downtime promotion is gated by explicit post-start smoke checks.",
+      "test_instructions": "Run the unit test and confirm smoke manifests require named checks and timeouts.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/smoke-test-manifest-policy.md",
+          "kind": "document",
+          "content": "Smoke test manifest policy should make post-start validation explicit before promoting a new color. Each check should declare a name, endpoint, expected status, and timeout.\n\nPolicy checks:\n\n- at least one smoke check\n- every check has a name\n- every check has a path\n- timeout is positive"
+        },
+        {
+          "path": "compose_zero_downtime/smoke_manifest.py",
+          "content": "from __future__ import annotations\n\n\ndef smoke_manifest_warnings(checks: list[dict[str, object]]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if not checks:\n        return (\"smoke_checks_missing\",)\n    for index, check in enumerate(checks):\n        prefix = f\"check_{index}\"\n        if not check.get(\"name\"):\n            warnings.append(f\"{prefix}_name_missing\")\n        if not check.get(\"path\"):\n            warnings.append(f\"{prefix}_path_missing\")\n        timeout = check.get(\"timeout_seconds\")\n        if not isinstance(timeout, (int, float)) or timeout <= 0:\n            warnings.append(f\"{prefix}_timeout_must_be_positive\")\n    return tuple(warnings)\n\n\ndef smoke_manifest_is_ready(checks: list[dict[str, object]]) -> bool:\n    return not smoke_manifest_warnings(checks)\n"
+        },
+        {
+          "path": "tests/test_smoke_manifest.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.smoke_manifest import smoke_manifest_is_ready, smoke_manifest_warnings\n\n\nclass SmokeManifestTests(unittest.TestCase):\n    def test_named_smoke_check_passes(self):\n        checks = [{\"name\": \"health\", \"path\": \"/health\", \"timeout_seconds\": 5}]\n\n        self.assertTrue(smoke_manifest_is_ready(checks))\n\n    def test_missing_timeout_is_reported(self):\n        warnings = smoke_manifest_warnings([{\"name\": \"health\", \"path\": \"/health\"}])\n\n        self.assertIn(\"check_0_timeout_must_be_positive\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "traffic-shift-plan-policy",
+      "title": "Add traffic shift plan policy",
+      "portfolio_reason": "Shows compose promotion has controlled traffic movement and rollback points.",
+      "test_instructions": "Run the unit test and confirm traffic shift steps are ordered and bounded.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/traffic-shift-plan-policy.md",
+          "kind": "document",
+          "content": "Traffic shift plan policy should keep blue/green promotion steps explicit. Traffic percentages must start at 0, finish at 100, and never move backwards.\n\nPolicy checks:\n\n- starts at 0 percent\n- ends at 100 percent\n- percentages are ordered\n- observation seconds are positive"
+        },
+        {
+          "path": "compose_zero_downtime/traffic_shift.py",
+          "content": "from __future__ import annotations\n\n\ndef traffic_shift_warnings(steps: list[dict[str, int]]) -> tuple[str, ...]:\n    if not steps:\n        return (\"traffic_shift_steps_missing\",)\n    warnings: list[str] = []\n    percentages = [step.get(\"percent\") for step in steps]\n    if percentages[0] != 0:\n        warnings.append(\"traffic_shift_must_start_at_zero\")\n    if percentages[-1] != 100:\n        warnings.append(\"traffic_shift_must_end_at_full\")\n    if any(not isinstance(value, int) or value < 0 or value > 100 for value in percentages):\n        warnings.append(\"traffic_shift_percent_must_be_between_0_and_100\")\n    if percentages != sorted(percentages):\n        warnings.append(\"traffic_shift_percentages_must_be_ordered\")\n    if any(not isinstance(step.get(\"observe_seconds\"), int) or step[\"observe_seconds\"] <= 0 for step in steps):\n        warnings.append(\"observe_seconds_must_be_positive\")\n    return tuple(warnings)\n\n\ndef traffic_shift_plan_is_safe(steps: list[dict[str, int]]) -> bool:\n    return not traffic_shift_warnings(steps)\n"
+        },
+        {
+          "path": "tests/test_traffic_shift.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.traffic_shift import traffic_shift_plan_is_safe, traffic_shift_warnings\n\n\nclass TrafficShiftTests(unittest.TestCase):\n    def test_ordered_shift_plan_passes(self):\n        steps = [{\"percent\": 0, \"observe_seconds\": 10}, {\"percent\": 50, \"observe_seconds\": 30}, {\"percent\": 100, \"observe_seconds\": 60}]\n\n        self.assertTrue(traffic_shift_plan_is_safe(steps))\n\n    def test_unordered_shift_plan_is_reported(self):\n        warnings = traffic_shift_warnings([{\"percent\": 0, \"observe_seconds\": 10}, {\"percent\": 100, \"observe_seconds\": 10}, {\"percent\": 50, \"observe_seconds\": 10}])\n\n        self.assertIn(\"traffic_shift_must_end_at_full\", warnings)\n        self.assertIn(\"traffic_shift_percentages_must_be_ordered\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
