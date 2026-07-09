@@ -38,12 +38,15 @@ def rollback_target_color(active_file: Path) -> str:
 
 
 def render_nginx_config(template: Path, output: Path, active_color: str, app_port: str) -> None:
-    rendered = (
+    output.write_text(render_nginx_config_text(template, active_color, app_port), encoding="utf-8")
+
+
+def render_nginx_config_text(template: Path, active_color: str, app_port: str) -> str:
+    return (
         template.read_text(encoding="utf-8")
         .replace("{{ACTIVE_COLOR}}", active_color)
         .replace("{{APP_PORT}}", app_port)
     )
-    output.write_text(rendered, encoding="utf-8")
 
 
 def build_smoke_url(base_url: str, path: str = "/") -> str:
@@ -125,6 +128,17 @@ def deploy(args: argparse.Namespace) -> int:
         os.environ[f"{next_color.upper()}_IMAGE"] = app_image
 
     service = f"app_{next_color}"
+    nginx_template = deploy_dir / "nginx/default.conf.tpl"
+    nginx_output = deploy_dir / "nginx/default.conf"
+    render_nginx_config_text(nginx_template, next_color, app_port)
+
+    if args.dry_run:
+        print(f"Dry run target color: {next_color}")
+        print(f"Dry run generated config: {nginx_output}")
+        smoke_target = build_smoke_url(args.smoke_url, args.smoke_path) if args.smoke_url else "not configured"
+        print(f"Dry run smoke target: {smoke_target}")
+        return 0
+
     print(f"Deploying {service}")
     run(compose_command(compose_file, env_file, "--profile", next_color, "up", "-d", service))
 
@@ -133,8 +147,8 @@ def deploy(args: argparse.Namespace) -> int:
     wait_for_ready(container_id, service, args.health_attempts, args.health_interval)
 
     render_nginx_config(
-        deploy_dir / "nginx/default.conf.tpl",
-        deploy_dir / "nginx/default.conf",
+        nginx_template,
+        nginx_output,
         next_color,
         app_port,
     )
@@ -180,6 +194,7 @@ def add_deploy_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--smoke-url", help="Public base URL to verify after switching traffic.")
     parser.add_argument("--smoke-path", default="/", help="Public path used for the smoke test.")
     parser.add_argument("--smoke-timeout", type=float, default=5.0)
+    parser.add_argument("--dry-run", action="store_true", help="Render the deployment plan without starting containers.")
 
 
 def build_parser() -> argparse.ArgumentParser:
