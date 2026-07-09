@@ -33,6 +33,10 @@ def choose_next_color(current_color: str, requested_color: str | None = None) ->
     return "green" if current_color == "blue" else "blue"
 
 
+def rollback_target_color(active_file: Path) -> str:
+    return choose_next_color(read_active_color(active_file))
+
+
 def render_nginx_config(template: Path, output: Path, active_color: str, app_port: str) -> None:
     rendered = (
         template.read_text(encoding="utf-8")
@@ -156,19 +160,40 @@ def deploy(args: argparse.Namespace) -> int:
     return 0
 
 
+def rollback(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve() if args.root else repo_root()
+    deploy_dir = root / "deploy"
+    active_file = Path(os.environ.get("ACTIVE_FILE", deploy_dir / ".active-color"))
+    target_color = rollback_target_color(active_file)
+    current_color = read_active_color(active_file)
+
+    print(f"Rolling back from {current_color} to {target_color}")
+    deploy_args = argparse.Namespace(**vars(args))
+    deploy_args.color = target_color
+    return deploy(deploy_args)
+
+
+def add_deploy_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--root", help="Repository root. Defaults to the current package root.")
+    parser.add_argument("--health-attempts", type=int, default=60)
+    parser.add_argument("--health-interval", type=float, default=2.0)
+    parser.add_argument("--smoke-url", help="Public base URL to verify after switching traffic.")
+    parser.add_argument("--smoke-path", default="/", help="Public path used for the smoke test.")
+    parser.add_argument("--smoke-timeout", type=float, default=5.0)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Docker Compose blue/green deployment helper")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     deploy_parser = subparsers.add_parser("deploy", help="Deploy and promote the inactive color")
     deploy_parser.add_argument("color", nargs="?", choices=sorted(VALID_COLORS))
-    deploy_parser.add_argument("--root", help="Repository root. Defaults to the current package root.")
-    deploy_parser.add_argument("--health-attempts", type=int, default=60)
-    deploy_parser.add_argument("--health-interval", type=float, default=2.0)
-    deploy_parser.add_argument("--smoke-url", help="Public base URL to verify after switching traffic.")
-    deploy_parser.add_argument("--smoke-path", default="/", help="Public path used for the smoke test.")
-    deploy_parser.add_argument("--smoke-timeout", type=float, default=5.0)
+    add_deploy_options(deploy_parser)
     deploy_parser.set_defaults(func=deploy)
+
+    rollback_parser = subparsers.add_parser("rollback", help="Promote the previous blue/green color")
+    add_deploy_options(rollback_parser)
+    rollback_parser.set_defaults(func=rollback)
 
     return parser
 
