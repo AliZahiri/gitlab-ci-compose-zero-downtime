@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -10,6 +11,7 @@ from compose_zero_downtime.cli import (
     build_smoke_url,
     choose_next_color,
     deploy,
+    deployment_plan,
     read_active_color,
     render_nginx_config,
     render_nginx_config_text,
@@ -61,6 +63,22 @@ class ComposeZeroDowntimeTests(unittest.TestCase):
             "https://example.com/app/health",
         )
 
+    def test_deployment_plan_reports_side_effects(self):
+        plan = deployment_plan(
+            current_color="blue",
+            next_color="green",
+            service="app_green",
+            nginx_config=Path("/repo/deploy/nginx/default.conf"),
+            smoke_url="https://example.com/app",
+            smoke_path="/health",
+            stop_old=True,
+        )
+
+        self.assertEqual(plan["target_color"], "green")
+        self.assertEqual(plan["previous_color"], "blue")
+        self.assertEqual(plan["smoke_target"], "https://example.com/app/health")
+        self.assertTrue(plan["will_stop_previous_color"])
+
     def test_rollback_target_uses_previous_color(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             active_file = Path(tmpdir) / ".active-color"
@@ -110,6 +128,7 @@ class ComposeZeroDowntimeTests(unittest.TestCase):
                 smoke_path="/health",
                 smoke_timeout=1.5,
                 dry_run=True,
+                plan_json=False,
             )
             stdout = StringIO()
 
@@ -120,6 +139,38 @@ class ComposeZeroDowntimeTests(unittest.TestCase):
             self.assertIn("Dry run target color: green", stdout.getvalue())
             self.assertIn(str(nginx_dir / "default.conf"), stdout.getvalue())
             self.assertIn("https://example.com/app/health", stdout.getvalue())
+            self.assertFalse((nginx_dir / "default.conf").exists())
+
+    def test_deploy_dry_run_can_print_json_plan(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            nginx_dir = root / "deploy/nginx"
+            nginx_dir.mkdir(parents=True)
+            (nginx_dir / "default.conf.tpl").write_text(
+                "server app_{{ACTIVE_COLOR}}:{{APP_PORT}};",
+                encoding="utf-8",
+            )
+            (root / "deploy/.active-color").write_text("blue\n", encoding="utf-8")
+            args = SimpleNamespace(
+                root=str(root),
+                color=None,
+                health_attempts=3,
+                health_interval=0.1,
+                smoke_url="https://example.com/app",
+                smoke_path="/health",
+                smoke_timeout=1.5,
+                dry_run=True,
+                plan_json=True,
+            )
+            stdout = StringIO()
+
+            with mock.patch("compose_zero_downtime.cli.run") as run_mock, redirect_stdout(stdout):
+                self.assertEqual(deploy(args), 0)
+
+            self.assertFalse(run_mock.called)
+            plan = json.loads(stdout.getvalue())
+            self.assertEqual(plan["target_color"], "green")
+            self.assertEqual(plan["smoke_target"], "https://example.com/app/health")
             self.assertFalse((nginx_dir / "default.conf").exists())
 
 

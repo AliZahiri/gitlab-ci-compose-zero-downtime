@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -53,6 +54,28 @@ def build_smoke_url(base_url: str, path: str = "/") -> str:
     clean_base = base_url.rstrip("/") + "/"
     clean_path = path.lstrip("/")
     return urljoin(clean_base, clean_path)
+
+
+def deployment_plan(
+    *,
+    current_color: str,
+    next_color: str,
+    service: str,
+    nginx_config: Path,
+    smoke_url: str | None,
+    smoke_path: str,
+    stop_old: bool,
+) -> dict[str, str | bool | None]:
+    old_color = "" if current_color == next_color else current_color
+    return {
+        "current_color": current_color,
+        "target_color": next_color,
+        "previous_color": old_color or None,
+        "service": service,
+        "nginx_config": str(nginx_config),
+        "smoke_target": build_smoke_url(smoke_url, smoke_path) if smoke_url else None,
+        "will_stop_previous_color": bool(old_color and stop_old),
+    }
 
 
 def run_smoke_test(base_url: str, path: str, timeout: float) -> None:
@@ -131,11 +154,23 @@ def deploy(args: argparse.Namespace) -> int:
     nginx_template = deploy_dir / "nginx/default.conf.tpl"
     nginx_output = deploy_dir / "nginx/default.conf"
     render_nginx_config_text(nginx_template, next_color, app_port)
+    plan = deployment_plan(
+        current_color=current_color,
+        next_color=next_color,
+        service=service,
+        nginx_config=nginx_output,
+        smoke_url=args.smoke_url,
+        smoke_path=args.smoke_path,
+        stop_old=stop_old,
+    )
 
     if args.dry_run:
+        if args.plan_json:
+            print(json.dumps(plan, indent=2, sort_keys=True))
+            return 0
         print(f"Dry run target color: {next_color}")
         print(f"Dry run generated config: {nginx_output}")
-        smoke_target = build_smoke_url(args.smoke_url, args.smoke_path) if args.smoke_url else "not configured"
+        smoke_target = plan["smoke_target"] or "not configured"
         print(f"Dry run smoke target: {smoke_target}")
         return 0
 
@@ -195,6 +230,7 @@ def add_deploy_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--smoke-path", default="/", help="Public path used for the smoke test.")
     parser.add_argument("--smoke-timeout", type=float, default=5.0)
     parser.add_argument("--dry-run", action="store_true", help="Render the deployment plan without starting containers.")
+    parser.add_argument("--plan-json", action="store_true", help="Print dry-run deployment plan as JSON.")
 
 
 def build_parser() -> argparse.ArgumentParser:
