@@ -399,6 +399,50 @@
           "content": "import unittest\n\nfrom compose_zero_downtime.traffic_shift import traffic_shift_plan_is_safe, traffic_shift_warnings\n\n\nclass TrafficShiftTests(unittest.TestCase):\n    def test_ordered_shift_plan_passes(self):\n        steps = [{\"percent\": 0, \"observe_seconds\": 10}, {\"percent\": 50, \"observe_seconds\": 30}, {\"percent\": 100, \"observe_seconds\": 60}]\n\n        self.assertTrue(traffic_shift_plan_is_safe(steps))\n\n    def test_unordered_shift_plan_is_reported(self):\n        warnings = traffic_shift_warnings([{\"percent\": 0, \"observe_seconds\": 10}, {\"percent\": 100, \"observe_seconds\": 10}, {\"percent\": 50, \"observe_seconds\": 10}])\n\n        self.assertIn(\"traffic_shift_must_end_at_full\", warnings)\n        self.assertIn(\"traffic_shift_percentages_must_be_ordered\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "deployment-freeze-window",
+      "title": "Add deployment freeze window guard",
+      "files": [
+        {
+          "path": "docs/daily/deployment-freeze-window.md",
+          "kind": "document",
+          "content": "Production deployment automation should be able to respect freeze windows during incident response, high-traffic events, or maintenance restrictions. The guard should be explicit so the pipeline can fail early before starting containers or switching traffic.\n\nGuard inputs:\n\n- current UTC hour\n- blocked deployment hours\n- emergency override flag\n- clear reason when deployment is blocked"
+        },
+        {
+          "path": "compose_zero_downtime/freeze_window.py",
+          "content": "from __future__ import annotations\n\n\ndef deployment_allowed(current_hour_utc: int, frozen_hours_utc: set[int], *, emergency_override: bool = False) -> bool:\n    if not 0 <= current_hour_utc <= 23:\n        raise ValueError(\"current hour must be between 0 and 23\")\n    invalid_hours = [hour for hour in frozen_hours_utc if not 0 <= hour <= 23]\n    if invalid_hours:\n        raise ValueError(\"frozen hours must be between 0 and 23\")\n    return emergency_override or current_hour_utc not in frozen_hours_utc\n\n\ndef freeze_window_reason(current_hour_utc: int, frozen_hours_utc: set[int]) -> str | None:\n    if deployment_allowed(current_hour_utc, frozen_hours_utc):\n        return None\n    return f\"deployment blocked by freeze window at hour {current_hour_utc:02d}:00 UTC\"\n"
+        },
+        {
+          "path": "tests/test_freeze_window.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.freeze_window import deployment_allowed, freeze_window_reason\n\n\nclass FreezeWindowTests(unittest.TestCase):\n    def test_deployment_is_blocked_during_frozen_hour(self):\n        self.assertFalse(deployment_allowed(22, {22, 23}))\n        self.assertIn(\"22:00 UTC\", freeze_window_reason(22, {22}))\n\n    def test_emergency_override_allows_deployment(self):\n        self.assertTrue(deployment_allowed(22, {22}, emergency_override=True))\n\n    def test_invalid_hour_is_rejected(self):\n        with self.assertRaises(ValueError):\n            deployment_allowed(24, set())\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ],
+      "portfolio_reason": "Adds a realistic release-safety control for production deployment windows.",
+      "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm frozen hours block deployment unless override is explicit.",
+      "change_kind": "docs-and-code"
+    },
+    {
+      "id": "smoke-result-summary",
+      "title": "Add smoke result summary helper",
+      "files": [
+        {
+          "path": "docs/daily/smoke-result-summary.md",
+          "kind": "document",
+          "content": "Smoke tests should leave a compact summary that can be attached to CI logs or release notes. A summary helps operators see which endpoint failed, how long checks took, and whether rollback should be considered.\n\nUseful fields:\n\n- check name\n- target URL\n- HTTP status\n- duration in milliseconds\n- pass/fail outcome"
+        },
+        {
+          "path": "compose_zero_downtime/smoke_result.py",
+          "content": "from __future__ import annotations\n\n\ndef smoke_result_passed(result: dict[str, object], *, max_duration_ms: int = 2000) -> bool:\n    status = result.get(\"status_code\")\n    duration = result.get(\"duration_ms\")\n    return isinstance(status, int) and 200 <= status < 400 and isinstance(duration, (int, float)) and duration <= max_duration_ms\n\n\ndef summarize_smoke_result(result: dict[str, object], *, max_duration_ms: int = 2000) -> dict[str, object]:\n    return {\n        \"name\": str(result.get(\"name\", \"smoke\")),\n        \"target\": str(result.get(\"target\", \"\")),\n        \"passed\": smoke_result_passed(result, max_duration_ms=max_duration_ms),\n        \"status_code\": result.get(\"status_code\"),\n        \"duration_ms\": result.get(\"duration_ms\"),\n    }\n"
+        },
+        {
+          "path": "tests/test_smoke_result.py",
+          "content": "import unittest\n\nfrom compose_zero_downtime.smoke_result import smoke_result_passed, summarize_smoke_result\n\n\nclass SmokeResultTests(unittest.TestCase):\n    def test_fast_success_passes(self):\n        result = {\"name\": \"health\", \"target\": \"https://example.com/health\", \"status_code\": 200, \"duration_ms\": 120}\n\n        self.assertTrue(smoke_result_passed(result))\n        self.assertTrue(summarize_smoke_result(result)[\"passed\"])\n\n    def test_slow_or_error_result_fails(self):\n        self.assertFalse(smoke_result_passed({\"status_code\": 503, \"duration_ms\": 100}))\n        self.assertFalse(smoke_result_passed({\"status_code\": 200, \"duration_ms\": 5000}))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ],
+      "portfolio_reason": "Improves release observability around smoke tests and rollback decisions.",
+      "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm smoke summaries mark slow or failing checks as failed.",
+      "change_kind": "docs-and-code"
     }
   ]
 }
