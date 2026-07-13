@@ -465,6 +465,28 @@
     "portfolio_reason": "Adds a release-safety control that makes the Docker Compose deployment story more production credible.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm mutable artifacts are rejected before promotion.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "rollback-readiness-check",
+    "title": "Add rollback readiness check",
+    "files": [
+      {
+        "path": "docs/daily/rollback-readiness-check.md",
+        "kind": "document",
+        "content": "A zero-downtime rollback is only possible when the previous color is still healthy and the proxy can switch back safely. This check turns that operational assumption into an explicit release gate."
+      },
+      {
+        "path": "compose_zero_downtime/rollback_readiness.py",
+        "content": "from __future__ import annotations\n\n\ndef rollback_readiness_warnings(state: dict[str, object]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if state.get(\"previous_color_healthy\") is not True:\n        warnings.append(\"previous_color_is_not_healthy\")\n    if state.get(\"proxy_switch_ready\") is not True:\n        warnings.append(\"proxy_switch_is_not_ready\")\n    if not str(state.get(\"previous_color\", \"\")).strip():\n        warnings.append(\"previous_color_is_required\")\n    return tuple(warnings)\n\n\ndef rollback_is_ready(state: dict[str, object]) -> bool:\n    return not rollback_readiness_warnings(state)\n"
+      },
+      {
+        "path": "tests/test_rollback_readiness.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.rollback_readiness import rollback_is_ready, rollback_readiness_warnings\n\n\nclass RollbackReadinessTests(unittest.TestCase):\n    def test_healthy_previous_color_is_ready(self):\n        self.assertTrue(rollback_is_ready({\"previous_color\": \"blue\", \"previous_color_healthy\": True, \"proxy_switch_ready\": True}))\n\n    def test_missing_proxy_readiness_blocks_rollback(self):\n        warnings = rollback_readiness_warnings({\"previous_color\": \"blue\", \"previous_color_healthy\": True})\n\n        self.assertIn(\"proxy_switch_is_not_ready\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Makes rollback claims concrete by validating health and proxy readiness before release traffic moves.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm missing rollback gates are visible.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
