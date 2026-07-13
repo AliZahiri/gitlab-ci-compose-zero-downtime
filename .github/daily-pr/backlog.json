@@ -442,7 +442,29 @@
       ],
       "portfolio_reason": "Improves release observability around smoke tests and rollback decisions.",
       "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm smoke summaries mark slow or failing checks as failed.",
-      "change_kind": "docs-and-code"
-    }
-  ]
+    "change_kind": "docs-and-code"
+  },
+  {
+    "id": "deployment-artifact-integrity",
+    "title": "Add deployment artifact integrity guard",
+    "files": [
+      {
+        "path": "docs/daily/deployment-artifact-integrity.md",
+        "kind": "document",
+        "content": "A blue-green release should promote a traceable image artifact, not an ambiguous mutable tag. The deployment plan can fail before traffic moves when the image digest, build identifier, or provenance marker is missing.\n\nIntegrity signals:\n\n- image digest uses sha256\n- build identifier is present\n- source revision is recorded\n- emergency bypass remains explicit"
+      },
+      {
+        "path": "compose_zero_downtime/artifact_integrity.py",
+        "content": "from __future__ import annotations\n\nREQUIRED_ARTIFACT_FIELDS = (\"image\", \"digest\", \"build_id\", \"source_revision\")\n\n\ndef artifact_integrity_warnings(artifact: dict[str, object]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    for field in REQUIRED_ARTIFACT_FIELDS:\n        if not str(artifact.get(field, \"\")).strip():\n            warnings.append(f\"{field}_is_required\")\n    digest = str(artifact.get(\"digest\", \"\")).strip()\n    if digest and not digest.startswith(\"sha256:\"):\n        warnings.append(\"digest_must_use_sha256\")\n    return tuple(warnings)\n\n\ndef artifact_is_promotable(artifact: dict[str, object]) -> bool:\n    return not artifact_integrity_warnings(artifact)\n"
+      },
+      {
+        "path": "tests/test_artifact_integrity.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.artifact_integrity import artifact_integrity_warnings, artifact_is_promotable\n\n\nclass ArtifactIntegrityTests(unittest.TestCase):\n    def test_digest_pinned_artifact_is_promotable(self):\n        artifact = {\"image\": \"registry.example/app\", \"digest\": \"sha256:abc123\", \"build_id\": \"build-42\", \"source_revision\": \"deadbeef\"}\n\n        self.assertTrue(artifact_is_promotable(artifact))\n\n    def test_mutable_digest_is_rejected(self):\n        warnings = artifact_integrity_warnings({\"image\": \"registry.example/app\", \"digest\": \"latest\"})\n\n        self.assertIn(\"build_id_is_required\", warnings)\n        self.assertIn(\"digest_must_use_sha256\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Adds a release-safety control that makes the Docker Compose deployment story more production credible.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm mutable artifacts are rejected before promotion.",
+    "change_kind": "docs-and-code"
+  }
+]
 }
