@@ -487,6 +487,28 @@
     "portfolio_reason": "Makes rollback claims concrete by validating health and proxy readiness before release traffic moves.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm missing rollback gates are visible.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "release-health-budget-gate",
+    "title": "Add release health budget gate",
+    "files": [
+      {
+        "path": "docs/daily/release-health-budget-gate.md",
+        "kind": "document",
+        "content": "Promotion should be blocked when a release exceeds its explicit health budget. This helper keeps the gate deterministic by checking successful probes, allowed failures, and total observation duration before traffic changes."
+      },
+      {
+        "path": "compose_zero_downtime/release_health_budget.py",
+        "content": "from __future__ import annotations\n\n\ndef release_health_warnings(summary: dict[str, object], *, max_failures: int = 0, min_successes: int = 1) -> tuple[str, ...]:\n    warnings: list[str] = []\n    successes = summary.get(\"successes\")\n    failures = summary.get(\"failures\")\n    if not isinstance(successes, int) or successes < min_successes:\n        warnings.append(\"successful_probes_below_minimum\")\n    if not isinstance(failures, int) or failures > max_failures:\n        warnings.append(\"failed_probes_exceed_budget\")\n    return tuple(warnings)\n\n\ndef release_health_is_within_budget(summary: dict[str, object], *, max_failures: int = 0, min_successes: int = 1) -> bool:\n    return not release_health_warnings(summary, max_failures=max_failures, min_successes=min_successes)\n"
+      },
+      {
+        "path": "tests/test_release_health_budget.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.release_health_budget import release_health_is_within_budget, release_health_warnings\n\n\nclass ReleaseHealthBudgetTests(unittest.TestCase):\n    def test_clean_probe_summary_passes(self):\n        self.assertTrue(release_health_is_within_budget({\"successes\": 3, \"failures\": 0}))\n\n    def test_failure_budget_is_enforced(self):\n        warnings = release_health_warnings({\"successes\": 3, \"failures\": 1})\n\n        self.assertIn(\"failed_probes_exceed_budget\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Makes blue-green promotion gates measurable and easier to explain in a production release review.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm failed probes block promotion by default.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
