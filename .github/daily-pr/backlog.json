@@ -509,6 +509,28 @@
     "portfolio_reason": "Makes blue-green promotion gates measurable and easier to explain in a production release review.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm failed probes block promotion by default.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "deployment-environment-contract",
+    "title": "Add deployment environment contract",
+    "files": [
+      {
+        "path": "docs/daily/deployment-environment-contract.md",
+        "kind": "document",
+        "content": "A Compose release should verify the minimum environment contract before a container starts. Required deployment variables remain explicit while secret values stay outside the repository."
+      },
+      {
+        "path": "compose_zero_downtime/environment_contract.py",
+        "content": "from __future__ import annotations\n\n\ndef missing_environment_keys(environment: dict[str, str], required_keys: tuple[str, ...]) -> tuple[str, ...]:\n    return tuple(key for key in required_keys if not environment.get(key, \"\").strip())\n\n\ndef environment_contract_is_ready(environment: dict[str, str], required_keys: tuple[str, ...]) -> bool:\n    return not missing_environment_keys(environment, required_keys)\n"
+      },
+      {
+        "path": "tests/test_environment_contract.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.environment_contract import environment_contract_is_ready, missing_environment_keys\n\n\nclass EnvironmentContractTests(unittest.TestCase):\n    def test_complete_environment_passes(self):\n        self.assertTrue(environment_contract_is_ready({\"IMAGE_TAG\": \"sha\", \"APP_PORT\": \"8080\"}, (\"IMAGE_TAG\", \"APP_PORT\")))\n\n    def test_missing_environment_is_reported(self):\n        self.assertEqual((\"APP_PORT\",), missing_environment_keys({\"IMAGE_TAG\": \"sha\"}, (\"IMAGE_TAG\", \"APP_PORT\")))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Demonstrates deployment safety without committing secret values or relying on hidden assumptions.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm missing runtime variables are identified.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
