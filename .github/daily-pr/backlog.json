@@ -531,6 +531,28 @@
     "portfolio_reason": "Demonstrates deployment safety without committing secret values or relying on hidden assumptions.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm missing runtime variables are identified.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "promotion-verification-window",
+    "title": "Add promotion verification window policy",
+    "files": [
+      {
+        "path": "docs/daily/promotion-verification-window.md",
+        "kind": "document",
+        "content": "A new color should remain under observation for multiple consecutive health samples before the previous color is decommissioned. A configurable verification window reduces the risk of treating a single transient success as release readiness."
+      },
+      {
+        "path": "compose_zero_downtime/promotion_window.py",
+        "content": "from __future__ import annotations\n\n\ndef consecutive_healthy_samples(samples: list[bool] | tuple[bool, ...]) -> int:\n    count = 0\n    for sample in reversed(samples):\n        if not sample:\n            break\n        count += 1\n    return count\n\n\ndef promotion_window_is_satisfied(samples: list[bool] | tuple[bool, ...], *, required_samples: int = 3) -> bool:\n    if required_samples <= 0:\n        raise ValueError(\"required samples must be positive\")\n    return consecutive_healthy_samples(samples) >= required_samples\n"
+      },
+      {
+        "path": "tests/test_promotion_window.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.promotion_window import consecutive_healthy_samples, promotion_window_is_satisfied\n\n\nclass PromotionWindowTests(unittest.TestCase):\n    def test_required_consecutive_samples_pass(self):\n        self.assertTrue(promotion_window_is_satisfied([False, True, True, True]))\n\n    def test_recent_failure_resets_window(self):\n        self.assertEqual(1, consecutive_healthy_samples([True, True, False, True]))\n        self.assertFalse(promotion_window_is_satisfied([True, True, False, True]))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Strengthens health-gated promotion by requiring sustained readiness before rollback capacity is removed.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm a recent failed sample resets the promotion window.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
