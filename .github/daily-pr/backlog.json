@@ -553,6 +553,50 @@
     "portfolio_reason": "Strengthens health-gated promotion by requiring sustained readiness before rollback capacity is removed.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm a recent failed sample resets the promotion window.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "migration-plan-contract",
+    "title": "Add migration plan safety contract",
+    "files": [
+      {
+        "path": "docs/daily/migration-plan-contract.md",
+        "kind": "document",
+        "content": "Blue-green traffic switching cannot make a destructive database migration safe. This contract validates ordered expand/backfill/contract phases and requires evidence that the backward-compatibility window completed and rollback was tested before a contract step can run. It turns the existing migration guidance into an executable release gate."
+      },
+      {
+        "path": "compose_zero_downtime/migration_plan.py",
+        "content": "from __future__ import annotations\n\n\nALLOWED_PHASES = (\"expand\", \"backfill\", \"contract\")\n\n\ndef migration_plan_warnings(steps: list[dict[str, object]]) -> tuple[str, ...]:\n    if not steps:\n        return (\"migration_plan_is_empty\",)\n    warnings: list[str] = []\n    phases: list[str] = []\n    for index, step in enumerate(steps):\n        phase = str(step.get(\"phase\", \"\")).strip().lower()\n        phases.append(phase)\n        if phase not in ALLOWED_PHASES:\n            warnings.append(f\"step_{index}_phase_is_invalid\")\n        if phase == \"contract\":\n            if step.get(\"compatibility_window_complete\") is not True:\n                warnings.append(f\"step_{index}_compatibility_window_incomplete\")\n            if step.get(\"rollback_tested\") is not True:\n                warnings.append(f\"step_{index}_rollback_not_tested\")\n    if \"contract\" in phases and (\"expand\" not in phases or phases.index(\"expand\") > phases.index(\"contract\")):\n        warnings.append(\"expand_must_precede_contract\")\n    return tuple(warnings)\n\n\ndef migration_plan_is_safe(steps: list[dict[str, object]]) -> bool:\n    return not migration_plan_warnings(steps)\n"
+      },
+      {
+        "path": "tests/test_migration_plan.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.migration_plan import migration_plan_is_safe, migration_plan_warnings\n\n\nclass MigrationPlanTests(unittest.TestCase):\n    def test_expand_before_verified_contract_passes(self):\n        steps = [{\"phase\": \"expand\"}, {\"phase\": \"backfill\"}, {\"phase\": \"contract\", \"compatibility_window_complete\": True, \"rollback_tested\": True}]\n        self.assertTrue(migration_plan_is_safe(steps))\n\n    def test_contract_requires_compatibility_and_rollback_evidence(self):\n        warnings = migration_plan_warnings([{\"phase\": \"expand\"}, {\"phase\": \"contract\"}])\n        self.assertIn(\"step_1_compatibility_window_incomplete\", warnings)\n        self.assertIn(\"step_1_rollback_not_tested\", warnings)\n\n    def test_contract_cannot_precede_expand(self):\n        warnings = migration_plan_warnings([{\"phase\": \"contract\", \"compatibility_window_complete\": True, \"rollback_tested\": True}])\n        self.assertIn(\"expand_must_precede_contract\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Converts migration compatibility assumptions into a deterministic promotion control for safer Compose blue-green releases.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm contract phases fail without an earlier expand phase plus compatibility and rollback evidence.",
+    "change_kind": "docs-and-code"
+  },
+  {
+    "id": "rollback-artifact-contract",
+    "title": "Add rollback artifact availability contract",
+    "files": [
+      {
+        "path": "docs/daily/rollback-artifact-contract.md",
+        "kind": "document",
+        "content": "Rollback readiness depends on more than a healthy previous container. The previous image must be pinned by immutable digest, remain available to the deployment runner, differ from the candidate digest, and retain trusted verification evidence. This contract checks those prerequisites before promotion removes rollback capacity."
+      },
+      {
+        "path": "compose_zero_downtime/rollback_artifact.py",
+        "content": "from __future__ import annotations\n\nimport re\n\n\nDIGEST_PATTERN = re.compile(r\"sha256:[0-9a-f]{64}\")\n\n\ndef rollback_artifact_warnings(state: dict[str, object]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    previous = str(state.get(\"previous_digest\", \"\")).strip()\n    candidate = str(state.get(\"candidate_digest\", \"\")).strip()\n    available = state.get(\"available_digests\")\n    verified = state.get(\"verified_digests\")\n    if not DIGEST_PATTERN.fullmatch(previous):\n        warnings.append(\"previous_digest_is_not_immutable\")\n    if previous and previous == candidate:\n        warnings.append(\"previous_digest_matches_candidate\")\n    if not isinstance(available, list) or previous not in available:\n        warnings.append(\"previous_artifact_is_unavailable\")\n    if not isinstance(verified, list) or previous not in verified:\n        warnings.append(\"previous_artifact_is_unverified\")\n    return tuple(warnings)\n\n\ndef rollback_artifact_is_ready(state: dict[str, object]) -> bool:\n    return not rollback_artifact_warnings(state)\n"
+      },
+      {
+        "path": "tests/test_rollback_artifact.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.rollback_artifact import rollback_artifact_is_ready, rollback_artifact_warnings\n\n\nclass RollbackArtifactTests(unittest.TestCase):\n    def test_available_verified_previous_digest_passes(self):\n        previous = \"sha256:\" + \"a\" * 64\n        candidate = \"sha256:\" + \"b\" * 64\n        self.assertTrue(rollback_artifact_is_ready({\"previous_digest\": previous, \"candidate_digest\": candidate, \"available_digests\": [previous], \"verified_digests\": [previous]}))\n\n    def test_mutable_or_missing_artifact_is_rejected(self):\n        warnings = rollback_artifact_warnings({\"previous_digest\": \"latest\", \"candidate_digest\": \"sha256:\" + \"b\" * 64, \"available_digests\": [], \"verified_digests\": []})\n        self.assertIn(\"previous_digest_is_not_immutable\", warnings)\n        self.assertIn(\"previous_artifact_is_unavailable\", warnings)\n\n    def test_candidate_cannot_be_its_own_rollback(self):\n        digest = \"sha256:\" + \"c\" * 64\n        warnings = rollback_artifact_warnings({\"previous_digest\": digest, \"candidate_digest\": digest, \"available_digests\": [digest], \"verified_digests\": [digest]})\n        self.assertIn(\"previous_digest_matches_candidate\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Adds an immutable artifact and provenance gate to rollback planning instead of assuming the previous image remains pullable and trusted.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm mutable, unavailable, unverified, or candidate-equal rollback artifacts fail validation.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
