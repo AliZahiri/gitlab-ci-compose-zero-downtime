@@ -597,6 +597,50 @@
     "portfolio_reason": "Adds an immutable artifact and provenance gate to rollback planning instead of assuming the previous image remains pullable and trusted.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm mutable, unavailable, unverified, or candidate-equal rollback artifacts fail validation.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "traffic-switch-checkpoint-contract",
+    "title": "Add traffic switch checkpoint contract",
+    "files": [
+      {
+        "path": "docs/daily/traffic-switch-checkpoint-contract.md",
+        "kind": "document",
+        "content": "A blue-green traffic switch should be recoverable as a transaction. Before promotion, the checkpoint must record distinct current and candidate colors, the immutable candidate digest, a validated proxy configuration snapshot, the healthy candidate observation, and the previous upstream required for rollback. The contract is local and deterministic; the deployment runner remains responsible for persisting the checkpoint before reloading Nginx."
+      },
+      {
+        "path": "compose_zero_downtime/traffic_checkpoint.py",
+        "content": "from __future__ import annotations\n\nimport re\n\n\n_DIGEST = re.compile(r\"^sha256:[0-9a-f]{64}$\")\n\n\ndef traffic_checkpoint_violations(checkpoint: dict[str, object]) -> tuple[str, ...]:\n    violations: list[str] = []\n    current = checkpoint.get(\"current_color\")\n    candidate = checkpoint.get(\"candidate_color\")\n    if current not in {\"blue\", \"green\"} or candidate not in {\"blue\", \"green\"}:\n        violations.append(\"deployment_colors_must_be_blue_or_green\")\n    elif current == candidate:\n        violations.append(\"candidate_must_differ_from_current_color\")\n    digest = checkpoint.get(\"candidate_digest\")\n    if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):\n        violations.append(\"candidate_digest_must_be_immutable\")\n    if checkpoint.get(\"candidate_healthy\") is not True:\n        violations.append(\"candidate_health_must_be_confirmed\")\n    if checkpoint.get(\"proxy_config_valid\") is not True:\n        violations.append(\"proxy_configuration_must_be_validated\")\n    if not str(checkpoint.get(\"previous_upstream\", \"\")).strip():\n        violations.append(\"previous_upstream_is_required_for_rollback\")\n    return tuple(violations)\n\n\ndef traffic_checkpoint_is_ready(checkpoint: dict[str, object]) -> bool:\n    return not traffic_checkpoint_violations(checkpoint)\n"
+      },
+      {
+        "path": "tests/test_traffic_checkpoint.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.traffic_checkpoint import traffic_checkpoint_is_ready, traffic_checkpoint_violations\n\n\nclass TrafficCheckpointTests(unittest.TestCase):\n    def test_complete_checkpoint_passes(self):\n        checkpoint = {\"current_color\": \"blue\", \"candidate_color\": \"green\", \"candidate_digest\": \"sha256:\" + \"a\" * 64, \"candidate_healthy\": True, \"proxy_config_valid\": True, \"previous_upstream\": \"app_blue\"}\n        self.assertTrue(traffic_checkpoint_is_ready(checkpoint))\n\n    def test_same_color_and_mutable_image_fail(self):\n        checkpoint = {\"current_color\": \"blue\", \"candidate_color\": \"blue\", \"candidate_digest\": \"latest\", \"candidate_healthy\": True, \"proxy_config_valid\": True, \"previous_upstream\": \"app_blue\"}\n        violations = traffic_checkpoint_violations(checkpoint)\n        self.assertIn(\"candidate_must_differ_from_current_color\", violations)\n        self.assertIn(\"candidate_digest_must_be_immutable\", violations)\n\n    def test_health_proxy_and_rollback_state_are_required(self):\n        violations = traffic_checkpoint_violations({\"current_color\": \"blue\", \"candidate_color\": \"green\", \"candidate_digest\": \"sha256:\" + \"b\" * 64})\n        self.assertIn(\"candidate_health_must_be_confirmed\", violations)\n        self.assertIn(\"proxy_configuration_must_be_validated\", violations)\n        self.assertIn(\"previous_upstream_is_required_for_rollback\", violations)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Makes proxy promotion preconditions and rollback state explicit, preventing a traffic switch that cannot be safely reversed.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm invalid colors, mutable artifacts, unhealthy candidates, invalid proxy state, and missing rollback targets fail.",
+    "change_kind": "docs-and-code"
+  },
+  {
+    "id": "post-promotion-rollback-decision",
+    "title": "Add post-promotion rollback decision policy",
+    "files": [
+      {
+        "path": "docs/daily/post-promotion-rollback-decision.md",
+        "kind": "document",
+        "content": "During the verification window, rollback should be driven by explicit observations rather than operator intuition. The policy requests rollback when health checks fail, the error-rate budget is exceeded, or the configured consecutive failure threshold is reached; invalid counters and rates are rejected before deployment."
+      },
+      {
+        "path": "compose_zero_downtime/rollback_decision.py",
+        "content": "from __future__ import annotations\n\n\ndef rollback_reasons(*, healthy: bool, error_rate: float, maximum_error_rate: float, consecutive_failures: int, failure_threshold: int) -> tuple[str, ...]:\n    if isinstance(error_rate, bool) or isinstance(maximum_error_rate, bool) or not 0 <= error_rate <= 1 or not 0 <= maximum_error_rate <= 1:\n        raise ValueError(\"error rates must be between zero and one\")\n    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in (consecutive_failures, failure_threshold)) or failure_threshold < 1:\n        raise ValueError(\"failure counters require a positive threshold\")\n    reasons: list[str] = []\n    if healthy is not True:\n        reasons.append(\"candidate_is_unhealthy\")\n    if error_rate > maximum_error_rate:\n        reasons.append(\"error_rate_budget_exceeded\")\n    if consecutive_failures >= failure_threshold:\n        reasons.append(\"consecutive_failure_threshold_reached\")\n    return tuple(reasons)\n\n\ndef rollback_is_required(**observations: object) -> bool:\n    return bool(rollback_reasons(**observations))\n"
+      },
+      {
+        "path": "tests/test_rollback_decision.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.rollback_decision import rollback_is_required, rollback_reasons\n\n\nclass RollbackDecisionTests(unittest.TestCase):\n    def test_healthy_release_within_budget_stays_promoted(self):\n        self.assertFalse(rollback_is_required(healthy=True, error_rate=0.01, maximum_error_rate=0.02, consecutive_failures=0, failure_threshold=3))\n\n    def test_independent_failure_signals_request_rollback(self):\n        reasons = rollback_reasons(healthy=False, error_rate=0.03, maximum_error_rate=0.02, consecutive_failures=3, failure_threshold=3)\n        self.assertEqual((\"candidate_is_unhealthy\", \"error_rate_budget_exceeded\", \"consecutive_failure_threshold_reached\"), reasons)\n\n    def test_invalid_observation_bounds_are_rejected(self):\n        with self.assertRaises(ValueError):\n            rollback_reasons(healthy=True, error_rate=1.1, maximum_error_rate=0.02, consecutive_failures=0, failure_threshold=3)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Adds deterministic recovery behavior to the verification window and ties rollback to measurable health and error-budget signals.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm healthy observations stay promoted while each failure signal and invalid bound is covered.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
