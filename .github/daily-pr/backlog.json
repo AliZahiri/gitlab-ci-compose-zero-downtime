@@ -641,6 +641,50 @@
     "portfolio_reason": "Adds deterministic recovery behavior to the verification window and ties rollback to measurable health and error-budget signals.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm healthy observations stay promoted while each failure signal and invalid bound is covered.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "promotion-readiness-gate",
+    "title": "Add promotion readiness gate",
+    "files": [
+      {
+        "path": "docs/daily/promotion-readiness-gate.md",
+        "kind": "document",
+        "content": "Traffic promotion should require a recoverable checkpoint, a satisfied consecutive-health window, and a release health budget in one decision. This gate composes the existing policies and returns explicit failure names before the Nginx switch is attempted."
+      },
+      {
+        "path": "compose_zero_downtime/promotion_gate.py",
+        "content": "from __future__ import annotations\n\nfrom compose_zero_downtime.promotion_window import promotion_window_is_satisfied\nfrom compose_zero_downtime.release_health_budget import release_health_warnings\nfrom compose_zero_downtime.traffic_checkpoint import traffic_checkpoint_violations\n\n\ndef promotion_gate_violations(*, checkpoint: dict[str, object], health_samples: list[bool] | tuple[bool, ...], health_summary: dict[str, object], required_samples: int = 3, max_failures: int = 0, min_successes: int = 1) -> tuple[str, ...]:\n    violations = list(traffic_checkpoint_violations(checkpoint))\n    if not promotion_window_is_satisfied(health_samples, required_samples=required_samples):\n        violations.append(\"promotion_health_window_not_satisfied\")\n    violations.extend(release_health_warnings(health_summary, max_failures=max_failures, min_successes=min_successes))\n    return tuple(violations)\n\n\ndef promotion_is_ready(**inputs: object) -> bool:\n    return not promotion_gate_violations(**inputs)\n"
+      },
+      {
+        "path": "tests/test_promotion_gate.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.promotion_gate import promotion_gate_violations, promotion_is_ready\n\n\ndef checkpoint():\n    return {\"current_color\": \"blue\", \"candidate_color\": \"green\", \"candidate_digest\": \"sha256:\" + \"a\" * 64, \"candidate_healthy\": True, \"proxy_config_valid\": True, \"previous_upstream\": \"app_blue\"}\n\n\nclass PromotionGateTests(unittest.TestCase):\n    def test_recoverable_healthy_release_is_ready(self):\n        self.assertTrue(promotion_is_ready(checkpoint=checkpoint(), health_samples=[True, True, True], health_summary={\"successes\": 3, \"failures\": 0}))\n\n    def test_checkpoint_window_and_budget_failures_are_combined(self):\n        invalid = checkpoint()\n        invalid[\"proxy_config_valid\"] = False\n        violations = promotion_gate_violations(checkpoint=invalid, health_samples=[True, False], health_summary={\"successes\": 1, \"failures\": 1})\n        self.assertIn(\"proxy_configuration_must_be_validated\", violations)\n        self.assertIn(\"promotion_health_window_not_satisfied\", violations)\n        self.assertIn(\"failed_probes_exceed_budget\", violations)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Connects health, rollback, artifact, and proxy invariants into one auditable promotion decision.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm checkpoint, health-window, and release-budget failures all block promotion.",
+    "change_kind": "docs-and-code"
+  },
+  {
+    "id": "deployment-transition-journal",
+    "title": "Add deployment transition journal policy",
+    "files": [
+      {
+        "path": "docs/daily/deployment-transition-journal.md",
+        "kind": "document",
+        "content": "A blue-green deployment audit should record an ordered transition from preparation through validation and promotion, with rollback as an explicit terminal alternative. The validator rejects missing, duplicated, unknown, or out-of-order states so incident review does not rely on ambiguous log lines."
+      },
+      {
+        "path": "compose_zero_downtime/transition_journal.py",
+        "content": "from __future__ import annotations\n\n\n_FORWARD = (\"prepared\", \"candidate_started\", \"candidate_healthy\", \"proxy_validated\", \"promoted\")\n\n\ndef transition_journal_violations(states: list[str] | tuple[str, ...]) -> tuple[str, ...]:\n    if not states:\n        return (\"deployment_transition_journal_is_required\",)\n    normalized = tuple(str(state).strip().lower() for state in states)\n    if len(set(normalized)) != len(normalized):\n        return (\"deployment_transition_states_must_be_unique\",)\n    if normalized[-1] == \"rolled_back\":\n        normalized = normalized[:-1]\n        if not normalized:\n            return (\"rollback_requires_a_started_deployment\",)\n    unknown = tuple(state for state in normalized if state not in _FORWARD)\n    if unknown:\n        return (\"unknown_deployment_transition_state:\" + \",\".join(unknown),)\n    expected = _FORWARD[: len(normalized)]\n    if normalized != expected:\n        return (\"deployment_transition_order_is_invalid\",)\n    return ()\n\n\ndef transition_journal_is_valid(states: list[str] | tuple[str, ...]) -> bool:\n    return not transition_journal_violations(states)\n"
+      },
+      {
+        "path": "tests/test_transition_journal.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.transition_journal import transition_journal_is_valid, transition_journal_violations\n\n\nclass TransitionJournalTests(unittest.TestCase):\n    def test_complete_promotion_and_explicit_rollback_are_valid(self):\n        self.assertTrue(transition_journal_is_valid([\"prepared\", \"candidate_started\", \"candidate_healthy\", \"proxy_validated\", \"promoted\"]))\n        self.assertTrue(transition_journal_is_valid([\"prepared\", \"candidate_started\", \"rolled_back\"]))\n\n    def test_skipped_and_duplicate_states_fail(self):\n        self.assertEqual((\"deployment_transition_order_is_invalid\",), transition_journal_violations([\"prepared\", \"candidate_healthy\"]))\n        self.assertEqual((\"deployment_transition_states_must_be_unique\",), transition_journal_violations([\"prepared\", \"prepared\"]))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Adds machine-checkable deployment audit ordering for promotion and rollback incident analysis.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm complete promotion and rollback paths pass while skipped, duplicate, or unknown states fail.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
