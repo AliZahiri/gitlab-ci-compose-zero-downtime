@@ -685,6 +685,50 @@
     "portfolio_reason": "Adds machine-checkable deployment audit ordering for promotion and rollback incident analysis.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm complete promotion and rollback paths pass while skipped, duplicate, or unknown states fail.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "promotion-evidence-contract",
+    "title": "Add promotion evidence contract",
+    "files": [
+      {
+        "path": "docs/daily/promotion-evidence-contract.md",
+        "kind": "document",
+        "content": "A blue/green promotion should leave one machine-readable decision record rather than relying on disconnected log lines. This contract requires release identity, distinct deployment colors, a minimum number of successful health samples, proxy validation, smoke-test success, traffic-switch confirmation, and rollback readiness. It validates evidence metadata only and does not claim zero downtime by itself."
+      },
+      {
+        "path": "compose_zero_downtime/promotion_evidence.py",
+        "content": "from __future__ import annotations\n\n\n_REQUIRED_CONFIRMATIONS = (\"candidate_healthy\", \"proxy_config_validated\", \"smoke_tests_passed\", \"traffic_switch_succeeded\", \"rollback_ready\")\n\n\ndef promotion_evidence_violations(evidence: dict[str, object], *, minimum_health_samples: int = 3) -> tuple[str, ...]:\n    if not isinstance(minimum_health_samples, int) or isinstance(minimum_health_samples, bool) or minimum_health_samples <= 0:\n        raise ValueError(\"minimum health samples must be a positive integer\")\n    violations: list[str] = []\n    if not str(evidence.get(\"release_id\", \"\")).strip():\n        violations.append(\"release_id_is_required\")\n    current = evidence.get(\"current_color\")\n    candidate = evidence.get(\"candidate_color\")\n    if current not in {\"blue\", \"green\"} or candidate not in {\"blue\", \"green\"}:\n        violations.append(\"deployment_colors_must_be_blue_or_green\")\n    elif current == candidate:\n        violations.append(\"candidate_color_must_differ_from_current_color\")\n    samples = evidence.get(\"successful_health_samples\")\n    if not isinstance(samples, int) or isinstance(samples, bool) or samples < minimum_health_samples:\n        violations.append(\"successful_health_samples_below_minimum\")\n    for field in _REQUIRED_CONFIRMATIONS:\n        if evidence.get(field) is not True:\n            violations.append(f\"{field}_must_be_confirmed\")\n    return tuple(violations)\n\n\ndef promotion_evidence_is_complete(evidence: dict[str, object], *, minimum_health_samples: int = 3) -> bool:\n    return not promotion_evidence_violations(evidence, minimum_health_samples=minimum_health_samples)\n"
+      },
+      {
+        "path": "tests/test_promotion_evidence.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.promotion_evidence import promotion_evidence_is_complete, promotion_evidence_violations\n\n\ndef complete_evidence():\n    return {\"release_id\": \"orders-20260725.1\", \"current_color\": \"blue\", \"candidate_color\": \"green\", \"successful_health_samples\": 5, \"candidate_healthy\": True, \"proxy_config_validated\": True, \"smoke_tests_passed\": True, \"traffic_switch_succeeded\": True, \"rollback_ready\": True}\n\n\nclass PromotionEvidenceTests(unittest.TestCase):\n    def test_complete_promotion_evidence_passes(self):\n        self.assertTrue(promotion_evidence_is_complete(complete_evidence(), minimum_health_samples=3))\n\n    def test_color_health_proxy_and_rollback_failures_are_combined(self):\n        evidence = complete_evidence()\n        evidence.update({\"candidate_color\": \"blue\", \"successful_health_samples\": 1, \"proxy_config_validated\": False, \"rollback_ready\": False})\n\n        violations = promotion_evidence_violations(evidence, minimum_health_samples=3)\n\n        self.assertIn(\"candidate_color_must_differ_from_current_color\", violations)\n        self.assertIn(\"successful_health_samples_below_minimum\", violations)\n        self.assertIn(\"proxy_config_validated_must_be_confirmed\", violations)\n        self.assertIn(\"rollback_ready_must_be_confirmed\", violations)\n\n    def test_boolean_sample_count_and_invalid_policy_are_rejected(self):\n        evidence = complete_evidence()\n        evidence[\"successful_health_samples\"] = True\n        self.assertIn(\"successful_health_samples_below_minimum\", promotion_evidence_violations(evidence))\n        with self.assertRaises(ValueError):\n            promotion_evidence_violations(evidence, minimum_health_samples=0)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Creates a reviewable promotion record spanning health, proxy, smoke, traffic, and rollback signals without overstating zero-downtime guarantees.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm complete evidence passes while missing identity, invalid colors, insufficient health samples, failed proxy/smoke/switch confirmation, or absent rollback readiness fail together.",
+    "change_kind": "docs-and-code"
+  },
+  {
+    "id": "promotion-resume-checkpoint",
+    "title": "Add promotion resume checkpoint contract",
+    "files": [
+      {
+        "path": "docs/daily/promotion-resume-checkpoint.md",
+        "kind": "document",
+        "content": "A CI runner interruption should not force operators to guess which blue/green transition completed. This checkpoint contract combines immutable candidate identity, current and candidate colors, ordered transition journal states, and rollback readiness into a resumable record. It supports deterministic recovery decisions without contacting production during validation."
+      },
+      {
+        "path": "compose_zero_downtime/promotion_resume.py",
+        "content": "from __future__ import annotations\n\nimport re\n\nfrom compose_zero_downtime.transition_journal import transition_journal_violations\n\n\n_DIGEST = re.compile(r\"sha256:[0-9a-f]{64}\\Z\")\n\n\ndef promotion_resume_violations(checkpoint: dict[str, object]) -> tuple[str, ...]:\n    violations: list[str] = []\n    if not str(checkpoint.get(\"release_id\", \"\")).strip():\n        violations.append(\"release_id_is_required\")\n    current = checkpoint.get(\"current_color\")\n    candidate = checkpoint.get(\"candidate_color\")\n    if current not in {\"blue\", \"green\"} or candidate not in {\"blue\", \"green\"}:\n        violations.append(\"deployment_colors_must_be_blue_or_green\")\n    elif current == candidate:\n        violations.append(\"candidate_color_must_differ_from_current_color\")\n    digest = checkpoint.get(\"candidate_digest\")\n    if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):\n        violations.append(\"candidate_digest_must_be_immutable\")\n    states = checkpoint.get(\"states\")\n    if not isinstance(states, (list, tuple)):\n        violations.append(\"transition_journal_is_required\")\n    else:\n        violations.extend(f\"journal:{item}\" for item in transition_journal_violations(states))\n    if checkpoint.get(\"rollback_ready\") is not True:\n        violations.append(\"rollback_readiness_must_be_confirmed\")\n    return tuple(violations)\n\n\ndef promotion_can_resume(checkpoint: dict[str, object]) -> bool:\n    return not promotion_resume_violations(checkpoint)\n"
+      },
+      {
+        "path": "tests/test_promotion_resume.py",
+        "content": "import unittest\n\nfrom compose_zero_downtime.promotion_resume import promotion_can_resume, promotion_resume_violations\n\n\ndef checkpoint():\n    return {\"release_id\": \"orders-20260725.1\", \"current_color\": \"blue\", \"candidate_color\": \"green\", \"candidate_digest\": \"sha256:\" + \"a\" * 64, \"states\": [\"prepared\", \"candidate_started\", \"candidate_healthy\"], \"rollback_ready\": True}\n\n\nclass PromotionResumeCheckpointTests(unittest.TestCase):\n    def test_ordered_immutable_checkpoint_can_resume(self):\n        self.assertTrue(promotion_can_resume(checkpoint()))\n\n    def test_digest_journal_and_rollback_failures_are_combined(self):\n        invalid = checkpoint()\n        invalid.update({\"candidate_digest\": \"latest\", \"states\": [\"prepared\", \"candidate_healthy\"], \"rollback_ready\": False})\n\n        violations = promotion_resume_violations(invalid)\n\n        self.assertIn(\"candidate_digest_must_be_immutable\", violations)\n        self.assertIn(\"journal:deployment_transition_order_is_invalid\", violations)\n        self.assertIn(\"rollback_readiness_must_be_confirmed\", violations)\n\n    def test_missing_journal_and_equal_colors_fail(self):\n        invalid = checkpoint()\n        invalid.update({\"candidate_color\": \"blue\", \"states\": None})\n        violations = promotion_resume_violations(invalid)\n        self.assertIn(\"candidate_color_must_differ_from_current_color\", violations)\n        self.assertIn(\"transition_journal_is_required\", violations)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Adds deterministic interruption recovery evidence so promotion resumes only from an ordered, immutable, rollback-ready checkpoint.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm ordered immutable checkpoints pass while invalid colors, mutable digests, missing or skipped journal states, and absent rollback readiness fail.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
