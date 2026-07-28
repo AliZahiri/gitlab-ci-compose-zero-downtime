@@ -10,6 +10,8 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urljoin
 
+from compose_zero_downtime.promotion_resume import promotion_resume_report
+
 
 VALID_COLORS = {"blue", "green"}
 
@@ -222,6 +224,19 @@ def rollback(args: argparse.Namespace) -> int:
     return deploy(deploy_args)
 
 
+def load_json_object(path: Path) -> dict[str, object]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("checkpoint input must be a JSON object")
+    return payload
+
+
+def check_resume(args: argparse.Namespace) -> int:
+    report = promotion_resume_report(load_json_object(args.checkpoint))
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0 if report["resume_allowed"] else 1
+
+
 def add_deploy_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--root", help="Repository root. Defaults to the current package root.")
     parser.add_argument("--health-attempts", type=int, default=60)
@@ -245,6 +260,10 @@ def build_parser() -> argparse.ArgumentParser:
     rollback_parser = subparsers.add_parser("rollback", help="Promote the previous blue/green color")
     add_deploy_options(rollback_parser)
     rollback_parser.set_defaults(func=rollback)
+
+    resume_parser = subparsers.add_parser("check-resume", help="Validate a saved promotion checkpoint")
+    resume_parser.add_argument("checkpoint", type=Path, help="Path to a JSON promotion checkpoint.")
+    resume_parser.set_defaults(func=check_resume)
 
     return parser
 

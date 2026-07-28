@@ -12,6 +12,7 @@ from compose_zero_downtime.cli import (
     choose_next_color,
     deploy,
     deployment_plan,
+    main,
     read_active_color,
     render_nginx_config,
     render_nginx_config_text,
@@ -172,6 +173,42 @@ class ComposeZeroDowntimeTests(unittest.TestCase):
             self.assertEqual(plan["target_color"], "green")
             self.assertEqual(plan["smoke_target"], "https://example.com/app/health")
             self.assertFalse((nginx_dir / "default.conf").exists())
+
+    def test_check_resume_command_returns_json_policy_result(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint_path = Path(tmpdir) / "checkpoint.json"
+            checkpoint_path.write_text(
+                json.dumps(
+                    {
+                        "release_id": "orders-20260728.1",
+                        "current_color": "blue",
+                        "candidate_color": "green",
+                        "candidate_digest": "sha256:" + "a" * 64,
+                        "states": ["prepared", "candidate_started", "candidate_healthy"],
+                        "rollback_ready": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with redirect_stdout(StringIO()) as stdout:
+                result = main(["check-resume", str(checkpoint_path)])
+
+        self.assertEqual(0, result)
+        report = json.loads(stdout.getvalue())
+        self.assertTrue(report["resume_allowed"])
+        self.assertEqual(3, report["journal_state_count"])
+
+    def test_check_resume_command_fails_closed_for_invalid_checkpoint(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint_path = Path(tmpdir) / "checkpoint.json"
+            checkpoint_path.write_text(json.dumps({"release_id": "orders-20260728.1"}), encoding="utf-8")
+
+            with redirect_stdout(StringIO()) as stdout:
+                result = main(["check-resume", str(checkpoint_path)])
+
+        self.assertEqual(1, result)
+        self.assertFalse(json.loads(stdout.getvalue())["resume_allowed"])
 
 
 if __name__ == "__main__":
