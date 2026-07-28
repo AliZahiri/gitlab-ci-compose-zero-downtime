@@ -1,6 +1,10 @@
 import unittest
 
-from compose_zero_downtime.promotion_resume import promotion_can_resume, promotion_resume_violations
+from compose_zero_downtime.promotion_resume import (
+    promotion_can_resume,
+    promotion_resume_report,
+    promotion_resume_violations,
+)
 
 
 def checkpoint():
@@ -27,6 +31,19 @@ class PromotionResumeCheckpointTests(unittest.TestCase):
         violations = promotion_resume_violations(invalid)
         self.assertIn("candidate_color_must_differ_from_current_color", violations)
         self.assertIn("transition_journal_is_required", violations)
+
+    def test_report_preserves_checkpoint_identity_without_digest(self):
+        report = promotion_resume_report(checkpoint())
+
+        self.assertTrue(report["resume_allowed"])
+        self.assertEqual("orders-20260725.1", report["release_id"])
+        self.assertNotIn("candidate_digest", report)
+
+    def test_non_string_release_identifier_is_rejected(self):
+        invalid = checkpoint()
+        invalid["release_id"] = 42
+
+        self.assertIn("release_id_is_required", promotion_resume_violations(invalid))
 
 
 if __name__ == "__main__":

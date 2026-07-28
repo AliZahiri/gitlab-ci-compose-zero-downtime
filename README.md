@@ -73,6 +73,7 @@ The blue/green deployment logic is implemented as a Python CLI and the Bash scri
 ```bash
 python3 -m compose_zero_downtime deploy green
 python3 -m compose_zero_downtime deploy blue
+python3 -m compose_zero_downtime check-resume promotion-checkpoint.json
 ```
 
 The CLI handles:
@@ -83,6 +84,7 @@ The CLI handles:
 - Nginx upstream rendering
 - Nginx reload or restart fallback
 - optional old color shutdown
+- machine-readable promotion checkpoint validation
 
 ## GitLab CI Usage
 
