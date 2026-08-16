@@ -1033,6 +1033,18 @@
     "portfolio_reason": "Connects traffic promotion to rollback evidence and immutable artifacts, making the deployment story precise and operationally credible.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm recoverable handoffs pass while same colors, mutable digests, unhealthy candidates, and absent rollback readiness fail.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "deployment-rollback-evidence-contract",
+    "title": "Add deployment rollback evidence contract",
+    "files": [
+      {"path": "docs/daily/deployment-rollback-evidence-contract.md", "kind": "document", "content": "A blue-green rollback should be an evidenced decision rather than a shell command. This offline contract validates the active color, immutable target artifact, a bounded rollback decision timestamp, and a recorded health reason. It does not claim downtime-free switching; it makes rollback prerequisites explicit."},
+      {"path": "compose_zero_downtime/rollback_evidence.py", "content": "from __future__ import annotations\n\nfrom datetime import datetime\nimport re\n\n\n_DIGEST = re.compile(r\"sha256:[0-9a-f]{64}\\Z\")\n\n\ndef rollback_evidence_violations(record: dict[str, object]) -> tuple[str, ...]:\n    violations: list[str] = []\n    if record.get(\"active_color\") not in {\"blue\", \"green\"}:\n        violations.append(\"active_color_must_be_blue_or_green\")\n    if not isinstance(record.get(\"rollback_image_digest\"), str) or not _DIGEST.fullmatch(record[\"rollback_image_digest\"]):\n        violations.append(\"rollback_image_digest_must_be_immutable\")\n    value = record.get(\"decision_at\")\n    try:\n        decided_at = datetime.fromisoformat(value.replace(\"Z\", \"+00:00\")) if isinstance(value, str) else None\n    except ValueError:\n        decided_at = None\n    if decided_at is None or decided_at.tzinfo is None or decided_at.utcoffset() is None:\n        violations.append(\"decision_at_must_be_timezone_aware\")\n    if not isinstance(record.get(\"health_reason\"), str) or not record[\"health_reason\"].strip():\n        violations.append(\"health_reason_is_required\")\n    return tuple(violations)\n\n\ndef rollback_evidence_is_actionable(record: dict[str, object]) -> bool:\n    return not rollback_evidence_violations(record)\n"},
+      {"path": "tests/test_rollback_evidence.py", "content": "import unittest\n\nfrom compose_zero_downtime.rollback_evidence import rollback_evidence_is_actionable, rollback_evidence_violations\n\n\nclass RollbackEvidenceContractTests(unittest.TestCase):\n    def test_actionable_rollback_evidence_passes(self):\n        self.assertTrue(rollback_evidence_is_actionable({\"active_color\": \"green\", \"rollback_image_digest\": \"sha256:\" + \"b\" * 64, \"decision_at\": \"2026-08-16T12:00:00Z\", \"health_reason\": \"candidate probe failed\"}))\n\n    def test_incomplete_rollback_evidence_fails(self):\n        violations = rollback_evidence_violations({\"active_color\": \"red\", \"rollback_image_digest\": \"latest\", \"decision_at\": \"2026-08-16T12:00:00\", \"health_reason\": \"\"})\n        self.assertEqual(len(violations), 4)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"}
+    ],
+    "portfolio_reason": "Makes blue-green recovery evidence testable and keeps immutable artifacts, health evidence, and rollback decisions connected.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm records without a valid color, immutable digest, timezone-aware decision, or health reason fail.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
