@@ -1057,6 +1057,18 @@
     "portfolio_reason": "Connects promotion readiness to bounded, candidate-specific health evidence without claiming that a health check alone guarantees zero downtime.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm only recent, healthy blue or green candidate evidence passes.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "deployment-freeze-evidence-gate",
+    "title": "Add deployment freeze evidence gate",
+    "files": [
+      {"path": "docs/daily/deployment-freeze-evidence-gate.md", "kind": "document", "content": "Document an offline contract for proving that a deployment is allowed during a freeze window or has an explicit emergency approval."},
+      {"path": "compose_zero_downtime/freeze_evidence.py", "content": "from __future__ import annotations\n\ndef freeze_evidence_violations(evidence: dict[str, object]) -> tuple[str, ...]:\n    return ()\n"},
+      {"path": "tests/test_freeze_evidence.py", "content": "import unittest\n\nclass FreezeEvidenceTests(unittest.TestCase):\n    def test_placeholder(self):\n        self.assertTrue(True)\n"}
+    ],
+    "portfolio_reason": "Makes deployment freeze and emergency exception handling auditable alongside health-gated promotion.",
+    "test_instructions": "Run the unit test and expand it to cover missing approvals and invalid freeze timestamps.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
