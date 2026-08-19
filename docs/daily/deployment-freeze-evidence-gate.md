@@ -2,7 +2,7 @@
 
 <!-- daily-pr-task: deployment-freeze-evidence-gate -->
 
-Document an offline contract for proving that a deployment is allowed during a freeze window or has an explicit emergency approval.
+This offline contract validates fresh, timezone-aware freeze evidence. Standard deployment is blocked during an active freeze. Emergency deployment requires an approval reference, approver, and recovery reason; it does not bypass health, artifact, or rollback gates.
 
 ## Portfolio Value
 
@@ -10,4 +10,4 @@ Makes deployment freeze and emergency exception handling auditable alongside hea
 
 ## Validation
 
-Run the unit test and expand it to cover missing approvals and invalid freeze timestamps.
+Run python3 -m unittest discover -s tests. Tests cover standard clearance, freeze blocking, an approved emergency path, stale evidence, and invalid policy or clock values.
