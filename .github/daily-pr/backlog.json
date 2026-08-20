@@ -1069,6 +1069,18 @@
     "portfolio_reason": "Makes deployment freeze and emergency exception handling auditable alongside health-gated promotion.",
     "test_instructions": "Run the unit test and expand it to cover missing approvals and invalid freeze timestamps.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "migration-compatibility-evidence-gate",
+    "title": "Add migration compatibility evidence gate",
+    "files": [
+      {"path": "docs/daily/migration-compatibility-evidence-gate.md", "kind": "document", "content": "A blue-green release can still fail if its database migration is incompatible with the currently serving color. This offline gate requires an identified migration, a declared expand/contract compatibility strategy, a completed backwards-compatibility check, and an explicit rollback result before promotion. It validates release metadata only and does not run migrations."},
+      {"path": "compose_zero_downtime/migration_compatibility.py", "content": "from __future__ import annotations\n\n_ALLOWED_STRATEGIES = frozenset({\"expand-contract\", \"backward-compatible\"})\n\n\ndef migration_compatibility_violations(evidence: dict[str, object]) -> tuple[str, ...]:\n    violations: list[str] = []\n    if not isinstance(evidence.get(\"migration_id\"), str) or not evidence[\"migration_id\"].strip():\n        violations.append(\"migration_id_is_required\")\n    if evidence.get(\"strategy\") not in _ALLOWED_STRATEGIES:\n        violations.append(\"strategy_must_be_compatible\")\n    if evidence.get(\"backward_compatibility_checked\") is not True:\n        violations.append(\"backward_compatibility_check_must_pass\")\n    if evidence.get(\"rollback_tested\") is not True:\n        violations.append(\"rollback_test_must_pass\")\n    return tuple(violations)\n\n\ndef migration_is_safe_to_promote(evidence: dict[str, object]) -> bool:\n    return not migration_compatibility_violations(evidence)\n"},
+      {"path": "tests/test_migration_compatibility.py", "content": "import unittest\n\nfrom compose_zero_downtime.migration_compatibility import migration_compatibility_violations, migration_is_safe_to_promote\n\n\nclass MigrationCompatibilityEvidenceGateTests(unittest.TestCase):\n    def test_compatible_migration_with_rollback_evidence_passes(self):\n        self.assertTrue(migration_is_safe_to_promote({\"migration_id\": \"20260820_add_index\", \"strategy\": \"expand-contract\", \"backward_compatibility_checked\": True, \"rollback_tested\": True}))\n\n    def test_missing_or_unverified_controls_are_reported(self):\n        violations = migration_compatibility_violations({\"migration_id\": \"\", \"strategy\": \"breaking\", \"backward_compatibility_checked\": False, \"rollback_tested\": False})\n        self.assertEqual(violations, (\"migration_id_is_required\", \"strategy_must_be_compatible\", \"backward_compatibility_check_must_pass\", \"rollback_test_must_pass\"))\n"}
+    ],
+    "portfolio_reason": "Prevents a database migration from undermining otherwise health-gated blue-green promotion.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and verify only a compatible, rollback-tested migration can pass.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
