@@ -16,6 +16,18 @@ The deployment script starts the inactive color, waits for its health check, ren
 - Migrations must be backward compatible.
 - Sessions should be stateless or stored outside the app container.
 
+## Container Readiness
+
+The deployment CLI checks the Docker lifecycle state before health status.
+Exited, dead, removing, and unhealthy candidates fail immediately, before the
+Nginx configuration or active-color marker changes. Created, paused, restarting,
+and health-check-starting candidates are polled within the configured attempt
+budget; a cached healthy result cannot override a non-running lifecycle state.
+
+For compatibility, a running container without a Docker health check still
+passes the gate. This proves process liveness only. Configure an application
+readiness check for production traffic promotion.
+
 ## Rollback
 
 Rollback is the same switch in reverse:
