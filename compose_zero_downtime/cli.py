@@ -115,12 +115,17 @@ def container_health(container_id: str) -> str:
             "docker",
             "inspect",
             "--format",
-            "{{if .State.Health}}{{.State.Health.Status}}{{else}}running{{end}}",
+            "{{json .State}}",
             container_id,
         ],
         capture=True,
     )
-    return result.stdout.strip()
+    state = json.loads(result.stdout)
+    status = state["Status"]
+    if status != "running":
+        return status
+    health = state.get("Health")
+    return health["Status"] if health is not None else "running"
 
 
 def wait_for_ready(container_id: str, service: str, attempts: int, interval: float) -> None:
@@ -128,9 +133,9 @@ def wait_for_ready(container_id: str, service: str, attempts: int, interval: flo
         status = container_health(container_id)
         if status in {"healthy", "running"}:
             return
-        if status == "unhealthy":
+        if status in {"unhealthy", "exited", "dead", "removing"}:
             run(["docker", "logs", container_id], check=False)
-            raise RuntimeError(f"{service} is unhealthy")
+            raise RuntimeError(f"{service} is {status}")
         time.sleep(interval)
     raise TimeoutError(f"{service} did not become ready")
 
