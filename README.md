@@ -118,3 +118,9 @@ Required CI/CD variables:
 - Secrets must be injected through GitLab CI/CD variables or server-side env files.
 
 See [docs/zero-downtime-compose.md](docs/zero-downtime-compose.md).
+
+## Releases
+
+See the [changelog](CHANGELOG.md) for versioned capabilities and compatibility
+notes. The [`v0.2.0` release candidate](docs/releases/v0.2.0.md) documents the
+current validation checklist, limitations, and rollback guidance.
