@@ -1422,6 +1422,15 @@
     "portfolio_reason": "Prevents a nominally healthy blue-green plan from promoting a colour with undeclared resource bounds or an unsafe readiness contract.",
     "test_instructions": "Run python3 -m unittest discover -s tests and confirm services require unique names, positive CPU, policy-compliant memory, approved restart behavior, and bounded readiness timeouts.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "blue-green-proxy-cache-bypass-contract-gate",
+    "title": "Add blue-green proxy cache bypass contract gate",
+    "files": [
+      {"path": "docs/daily/blue-green-proxy-cache-bypass-contract-gate.md", "kind": "document", "content": "A proxy cache can serve an old colour after traffic promotion unless release-sensitive paths have an explicit bypass or cache-key separation strategy. This offline gate checks declared promotion paths and a deliberate cache strategy; it does not alter Nginx or send traffic."},
+      {"path": "scripts/proxy_cache_bypass_contract.py", "content": "from __future__ import annotations\n\n\ndef proxy_cache_bypass_violations(paths: object, *, strategy: object) -> tuple[str, ...]:\n    if strategy not in {\"bypass\", \"color_scoped_cache_key\"}:\n        return (\"cache_strategy_must_be_explicit\",)\n    if not isinstance(paths, list) or not paths:\n        return (\"at_least_one_promotion_path_is_required\",)\n    violations: list[str] = []\n    seen: set[str] = set()\n    for index, path in enumerate(paths):\n        if not isinstance(path, str) or not path.startswith(\"/\") or path in seen:\n            violations.append(f\"path_{index}_must_be_a_unique_absolute_path\")\n        else:\n            seen.add(path)\n    return tuple(violations)\n\ndef proxy_cache_bypass_is_safe(paths: object, **policy: object) -> bool:\n    return not proxy_cache_bypass_violations(paths, **policy)\n"},
+      {"path": "tests/test_proxy_cache_bypass_contract.py", "content": "import unittest\nfrom scripts.proxy_cache_bypass_contract import proxy_cache_bypass_is_safe, proxy_cache_bypass_violations\n\nclass ProxyCacheBypassContractTests(unittest.TestCase):\n    def test_explicit_strategy_and_unique_paths_pass(self):\n        self.assertTrue(proxy_cache_bypass_is_safe([\"/health\", \"/version\"], strategy=\"bypass\"))\n    def test_missing_strategy_and_duplicate_paths_fail(self):\n        self.assertIn(\"cache_strategy_must_be_explicit\", proxy_cache_bypass_violations([\"/health\"], strategy=\"none\"))\n        self.assertIn(\"path_1_must_be_a_unique_absolute_path\", proxy_cache_bypass_violations([\"/health\", \"/health\"], strategy=\"bypass\"))\n\nif __name__ == \"__main__\":\n    unittest.main()\n"}
+    ], "portfolio_reason": "Makes cache behavior an explicit promotion safety concern, reducing the risk of serving stale-colour responses after a switch.", "test_instructions": "Run python3 -m unittest discover -s tests and confirm only an approved strategy with unique absolute promotion paths passes.", "change_kind": "docs-and-code"
   }
 ]
 }
