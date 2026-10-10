@@ -2,8 +2,8 @@ name: Daily Portfolio PR
 
 on:
   schedule:
-    - cron: "55 6 * * *"
-    - cron: "5 15 * * *"
+    # 08:00 Asia/Tehran (UTC+03:30)
+    - cron: "30 4 * * *"
   workflow_dispatch:
 
 permissions:
@@ -34,7 +34,7 @@ jobs:
       - name: Configure git identity
         run: |
           git config user.name "S.Ali Zahiri"
-          git config user.email "1667665+AliZahiri@users.noreply.github.com"
+          git config user.email "1667664+AliZahiri@users.noreply.github.com"
 
       - name: Create daily PR
         env:
