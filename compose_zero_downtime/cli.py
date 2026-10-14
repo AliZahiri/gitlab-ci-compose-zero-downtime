@@ -140,6 +140,31 @@ def wait_for_ready(container_id: str, service: str, attempts: int, interval: flo
     raise TimeoutError(f"{service} did not become ready")
 
 
+def reload_nginx(compose_file: Path, env_file: Path) -> None:
+    reload_result = run(
+        compose_command(compose_file, env_file, "exec", "-T", "nginx", "nginx", "-s", "reload"),
+        check=False,
+    )
+    if reload_result.returncode != 0:
+        run(compose_command(compose_file, env_file, "restart", "nginx"))
+
+
+def restore_previous_traffic(
+    *,
+    nginx_template: Path,
+    nginx_output: Path,
+    compose_file: Path,
+    env_file: Path,
+    active_file: Path,
+    previous_color: str,
+    app_port: str,
+) -> None:
+    """Restore the last active upstream after a post-promotion smoke-test failure."""
+    render_nginx_config(nginx_template, nginx_output, previous_color, app_port)
+    reload_nginx(compose_file, env_file)
+    active_file.write_text(f"{previous_color}\n", encoding="utf-8")
+
+
 def deploy(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve() if args.root else repo_root()
     deploy_dir = root / "deploy"
@@ -196,19 +221,38 @@ def deploy(args: argparse.Namespace) -> int:
     )
 
     run(compose_command(compose_file, env_file, "--profile", next_color, "up", "-d", "nginx"))
-    reload_result = run(
-        compose_command(compose_file, env_file, "exec", "-T", "nginx", "nginx", "-s", "reload"),
-        check=False,
-    )
-    if reload_result.returncode != 0:
-        run(compose_command(compose_file, env_file, "restart", "nginx"))
+    reload_nginx(compose_file, env_file)
 
     active_file.write_text(f"{next_color}\n", encoding="utf-8")
     print(f"Traffic switched to {next_color}")
 
     if args.smoke_url:
         print(f"Running public smoke test against {build_smoke_url(args.smoke_url, args.smoke_path)}")
-        run_smoke_test(args.smoke_url, args.smoke_path, args.smoke_timeout)
+        try:
+            run_smoke_test(args.smoke_url, args.smoke_path, args.smoke_timeout)
+        except Exception as smoke_error:
+            if not old_color:
+                raise
+            print(
+                f"Smoke test failed; restoring traffic to {old_color}",
+                file=sys.stderr,
+            )
+            try:
+                restore_previous_traffic(
+                    nginx_template=nginx_template,
+                    nginx_output=nginx_output,
+                    compose_file=compose_file,
+                    env_file=env_file,
+                    active_file=active_file,
+                    previous_color=old_color,
+                    app_port=app_port,
+                )
+            except Exception as rollback_error:
+                raise RuntimeError(
+                    "smoke test failed after traffic switched and automatic rollback "
+                    f"to {old_color} also failed: {rollback_error}"
+                ) from smoke_error
+            raise
 
     if old_color and stop_old:
         run(compose_command(compose_file, env_file, "stop", f"app_{old_color}"), check=False)
