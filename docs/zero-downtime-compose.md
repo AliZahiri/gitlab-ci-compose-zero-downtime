@@ -44,6 +44,13 @@ or
 
 depending on the last known healthy color.
 
+When `--smoke-url` is configured, a smoke-test failure after traffic has
+switched triggers an automatic proxy rollback to the previous color. The active
+color marker is restored only after that rollback reload succeeds. The failed
+candidate remains running for diagnostics; it is never stopped automatically.
+If the rollback itself fails, the command exits with both failure contexts and
+requires operator recovery.
+
 ## Limits
 
 This pattern does not protect against:

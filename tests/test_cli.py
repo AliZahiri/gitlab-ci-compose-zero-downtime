@@ -4,6 +4,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 import json
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 from unittest import mock
 
@@ -173,6 +174,61 @@ class ComposeZeroDowntimeTests(unittest.TestCase):
             self.assertEqual(plan["target_color"], "green")
             self.assertEqual(plan["smoke_target"], "https://example.com/app/health")
             self.assertFalse((nginx_dir / "default.conf").exists())
+
+    def test_failed_post_promotion_smoke_test_restores_previous_traffic(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            nginx_dir = root / "deploy/nginx"
+            nginx_dir.mkdir(parents=True)
+            (nginx_dir / "default.conf.tpl").write_text(
+                "server app_{{ACTIVE_COLOR}}:{{APP_PORT}};",
+                encoding="utf-8",
+            )
+            active_file = root / "deploy/.active-color"
+            active_file.write_text("blue\n", encoding="utf-8")
+            args = SimpleNamespace(
+                root=str(root),
+                color="green",
+                health_attempts=1,
+                health_interval=0.0,
+                smoke_url="https://example.com",
+                smoke_path="/health",
+                smoke_timeout=1.0,
+                dry_run=False,
+            )
+
+            def successful_docker_command(command, **_kwargs):
+                if command[-3:] == ["ps", "-q", "app_green"]:
+                    return subprocess.CompletedProcess(command, 0, stdout="candidate-id\n")
+                if command[:2] == ["docker", "inspect"]:
+                    return subprocess.CompletedProcess(
+                        command,
+                        0,
+                        stdout='{"Status": "running", "Health": {"Status": "healthy"}}',
+                    )
+                return subprocess.CompletedProcess(command, 0)
+
+            with (
+                mock.patch("compose_zero_downtime.cli.run", side_effect=successful_docker_command) as run_mock,
+                mock.patch(
+                    "compose_zero_downtime.cli.run_smoke_test",
+                    side_effect=RuntimeError("health endpoint returned HTTP 503"),
+                ),
+                self.assertRaisesRegex(RuntimeError, "HTTP 503"),
+            ):
+                deploy(args)
+
+            self.assertEqual("blue\n", active_file.read_text(encoding="utf-8"))
+            self.assertEqual(
+                "server app_blue:80;",
+                (nginx_dir / "default.conf").read_text(encoding="utf-8"),
+            )
+            reload_calls = [
+                call
+                for call in run_mock.call_args_list
+                if call.args[0][-2:] == ["-s", "reload"]
+            ]
+            self.assertEqual(2, len(reload_calls))
 
     def test_check_resume_command_returns_json_policy_result(self):
         with tempfile.TemporaryDirectory() as tmpdir:
