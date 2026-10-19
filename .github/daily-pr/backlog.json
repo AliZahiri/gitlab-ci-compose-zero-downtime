@@ -1477,6 +1477,18 @@
     "portfolio_reason": "Aligns readiness and promotion checks around an explicit, bounded health endpoint contract so deployments do not rely on undocumented probe behavior.",
     "test_instructions": "Run python3 -m unittest discover -s tests and confirm only unique, authentication-free absolute health endpoints with HTTP 200 and bounded timeouts pass.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "compose-health-response-contract-gate",
+    "title": "Add Compose health response contract gate",
+    "files": [
+      {"path": "docs/daily/compose-health-response-contract-gate.md", "kind": "document", "content": "A 200 status alone can be misleading when a health endpoint returns an empty or unstructured response. This offline gate validates an explicit response contract for promotion probes: a service name, expected status, bounded content type, and a declared required JSON field. It validates metadata only and does not make HTTP calls."},
+      {"path": "scripts/validate_compose_health_response.py", "content": "from __future__ import annotations\n\n\ndef compose_health_response_violations(contracts: object) -> tuple[str, ...]:\n    if not isinstance(contracts, list) or not contracts: return ('health_response_contracts_must_be_a_non_empty_list',)\n    violations: list[str] = []; services: set[str] = set()\n    for position, contract in enumerate(contracts):\n        prefix=f'contract_{position}'\n        if not isinstance(contract, dict): violations.append(f'{prefix}:contract_must_be_an_object'); continue\n        service=contract.get('service')\n        if not isinstance(service, str) or not service.strip(): violations.append(f'{prefix}:service_is_required')\n        elif service in services: violations.append(f'{prefix}:service_must_be_unique')\n        else: services.add(service)\n        if contract.get('expected_status') != 200: violations.append(f'{prefix}:expected_status_must_be_200')\n        if contract.get('content_type') != 'application/json': violations.append(f'{prefix}:content_type_must_be_json')\n        field=contract.get('required_field')\n        if not isinstance(field, str) or not field.strip() or '.' in field: violations.append(f'{prefix}:required_field_is_invalid')\n    return tuple(violations)\n"},
+      {"path": "tests/test_compose_health_response.py", "content": "import unittest\nfrom scripts.validate_compose_health_response import compose_health_response_violations\nclass ComposeHealthResponseTests(unittest.TestCase):\n    def test_json_health_contract_passes(self): self.assertEqual((), compose_health_response_violations([{'service':'api_green','expected_status':200,'content_type':'application/json','required_field':'status'}]))\n    def test_weak_contract_fails(self):\n        violations=compose_health_response_violations([{'service':'api_green','expected_status':204,'content_type':'text/plain','required_field':'deep.status'}])\n        self.assertIn('contract_0:expected_status_must_be_200', violations); self.assertIn('contract_0:content_type_must_be_json', violations); self.assertIn('contract_0:required_field_is_invalid', violations)\n"}
+    ],
+    "portfolio_reason": "Prevents traffic promotion from accepting weak or undocumented health responses by making successful probe semantics reviewable.",
+    "test_instructions": "Run python3 -m unittest discover -s tests and confirm unique JSON/200 health contracts with one required field pass while weak response contracts fail.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
