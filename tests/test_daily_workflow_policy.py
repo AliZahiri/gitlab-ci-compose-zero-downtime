@@ -4,7 +4,7 @@ from pathlib import Path
 
 WORKFLOW_PATH = Path(__file__).resolve().parents[1] / ".github/workflows/daily-pr.yml"
 EXPECTED_CRON = 'cron: "30 4 * * *"'
-EXPECTED_EMAIL = "1667665+AliZahiri@users.noreply.github.com"
+EXPECTED_EMAIL = "1667664+AliZahiri@users.noreply.github.com"
 
 
 class DailyWorkflowPolicyTests(unittest.TestCase):
