@@ -6,7 +6,21 @@ The project follows Semantic Versioning for public release snapshots. Policy
 helpers and evidence schemas remain experimental unless their documentation
 states otherwise.
 
-## [0.2.0] - Unreleased
+## [Unreleased]
+
+### Added
+
+- Offline contracts for Compose service resource limits, health endpoints and
+  responses, health-check timing, dependency restart propagation, and proxy
+  cache-bypass behavior.
+
+### Fixed
+
+- A failed public smoke test after traffic promotion restores the previous
+  upstream before the deployment command exits; the failed candidate remains
+  available for diagnosis.
+
+## [0.2.0] - 2026-09-18
 
 ### Added
 
