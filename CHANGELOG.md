@@ -8,17 +8,38 @@ states otherwise.
 
 ## [Unreleased]
 
+## [0.3.0] - TBD
+
 ### Added
 
 - Offline contracts for Compose service resource limits, health endpoints and
   responses, health-check timing, dependency restart propagation, and proxy
   cache-bypass behavior.
 
+### Changed
+
+- GitHub Actions now run on Ubuntu 26.04, pin first-party actions to immutable
+  commit SHAs, and declare read-only validation permissions explicitly.
+- Daily portfolio automation runs once at 08:00 Asia/Tehran and preserves the
+  repository's configured Git attribution.
+
 ### Fixed
 
 - A failed public smoke test after traffic promotion restores the previous
   upstream before the deployment command exits; the failed candidate remains
   available for diagnosis.
+
+### Security
+
+- Workflow dependencies are pinned to reviewed commits, reducing exposure to
+  mutable action tags.
+
+### Compatibility
+
+- Python 3.10 or newer remains required, and the existing Python module,
+  installed CLI, and Bash deployment entry points remain supported.
+- The new contracts are additive, operate offline, and require no persisted
+  data or deployment-configuration migration.
 
 ## [0.2.0] - 2026-09-18
 
@@ -72,4 +93,5 @@ states otherwise.
 - No persisted-data migration is required, but adopters must review the new
   evidence gates before making them mandatory in an existing pipeline.
 
+[0.3.0]: https://github.com/AliZahiri/gitlab-ci-compose-zero-downtime/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AliZahiri/gitlab-ci-compose-zero-downtime/compare/v0.1.0...v0.2.0
